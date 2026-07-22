@@ -1,0 +1,39 @@
+{% comment %}Requires context: production, stage_label, subtitle{% endcomment %}
+<table style="width:100%; border-collapse:collapse; border:none; margin-bottom:0;">
+  <tr>
+    <td style="border:none; vertical-align:top; padding:0 4mm 1mm 0; width:68%;">
+      <div style="font-size:14pt; font-weight:bold; line-height:1.2; color:#000;">Pierwsza Produkcja &#8211;</div>
+      <div style="font-size:10pt; font-weight:bold; line-height:1.3; color:#000;">
+        CD-00002055 <span style="font-size:8.5pt; font-weight:normal; color:#555;">&nbsp;H. &amp; J. Br&#xFC;ggen KG &nbsp;|&nbsp; {{ stage_label }}</span>
+      </div>
+      <div style="font-size:8pt; color:#555; line-height:1.3;">{{ subtitle }}</div>
+      <div style="font-size:9pt; font-weight:bold; color:#000; margin-top:1mm; line-height:1.3;">{{ production.product_name }}</div>
+    </td>
+    <td style="border:none; vertical-align:top; text-align:right; font-size:8pt; color:#555; white-space:nowrap; padding:0;">
+      Zlecenie: <strong style="color:#000;">{{ production.sap_zlecenie|default:"&#8211;" }}</strong><br/>
+      Materia&#322;: <strong style="color:#000;">{{ production.sap_material|default:"&#8211;" }}</strong><br/>
+      Data prod.: {{ production.data_produkcji|date:"d.m.Y"|default:"&#8211;" }}
+    </td>
+  </tr>
+</table>
+<table style="width:100%; border-collapse:collapse; border:none; font-size:8.5pt; color:#333; margin-top:0.5mm; margin-bottom:0;">
+  <tr>
+    <td style="border:none; padding:0.5mm 4mm 0.5mm 0; white-space:nowrap;">Typ A/B: <strong style="color:#000;">{{ production.typ_produkcji|default:"&#8211;" }}</strong></td>
+    <td style="border:none; padding:0.5mm 4mm 0.5mm 0; white-space:nowrap;">Layout: <strong style="color:#000;">{{ production.layout|default:"&#8211;" }}</strong></td>
+    <td style="border:none; padding:0.5mm 0 0.5mm 0;">Zmiany: <strong style="color:#000;">{{ production.zmiany|default:"&#8211;" }}</strong></td>
+  </tr>
+  <tr>
+    <td style="border:none; padding:0.5mm 4mm 0.5mm 0; white-space:nowrap;">Linia pak.: <strong style="color:#000;">{{ production.packaging_line|default:"&#8211;" }}</strong></td>
+    <td style="border:none; padding:0.5mm 4mm 0.5mm 0; white-space:nowrap;">Receptura: <strong style="color:#000;">{{ production.recipe|default:"&#8211;" }}</strong></td>
+    <td style="border:none; padding:0.5mm 0 0.5mm 0; white-space:nowrap;">CRM Nr: <strong style="color:#000;">{{ production.crm_project_nr|default:"&#8211;" }}</strong></td>
+  </tr>
+  <tr>
+    <td colspan="3" style="border:none; padding:0.5mm 0 1.5mm 0; font-size:8.5pt;">
+      R&amp;D: <strong style="color:#000;">{{ production.person_rd.get_full_name|default:"&#8211;" }}</strong> &nbsp;&nbsp;
+      QL: <strong style="color:#000;">{{ production.person_ql.get_full_name|default:"&#8211;" }}</strong> &nbsp;&nbsp;
+      SD: <strong style="color:#000;">{{ production.person_sd.get_full_name|default:"&#8211;" }}</strong> &nbsp;&nbsp;
+      PP: <strong style="color:#000;">{{ production.person_pp.get_full_name|default:"&#8211;" }}</strong>
+    </td>
+  </tr>
+</table>
+<div style="border-top:0.5mm solid #661C31; margin:0 0 3mm 0; line-height:0; font-size:0;">&nbsp;</div>

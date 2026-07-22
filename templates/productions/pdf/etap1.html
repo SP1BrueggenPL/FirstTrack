@@ -1,0 +1,237 @@
+{% load i18n %}<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>CD-00002055 Checklista Pierwsza Produkcja</title>
+<style>
+  :root{--brand-blue:#7a1f2b;--brand-red:#e2231a;--border:#000;--light-bg:#f5e9ea;}
+  *{box-sizing:border-box;}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#111;margin:0;padding:0;}
+  .header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid var(--brand-blue);padding-bottom:6px;margin-bottom:4px;}
+  .header .doc-id{color:var(--brand-blue);font-weight:bold;font-size:15px;}
+  .header .doc-title{font-size:13px;font-weight:600;color:#333;}
+  .logo{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:bold;font-size:22px;color:var(--brand-red);letter-spacing:1px;}
+  .subheader-bar{display:flex;border:1px solid var(--border);margin-bottom:12px;}
+  .subheader-bar div{flex:1;border-right:1px solid var(--border);padding:3px 6px;min-height:16px;}
+  .subheader-bar div:last-child{border-right:none;}
+  .subheader-bar .label{background:var(--light-bg);flex:0 0 100px;font-weight:bold;}
+  h2.section-title{font-size:12px;text-decoration:underline;margin:14px 0 6px 0;color:var(--brand-blue);}
+  table.info-grid{width:100%;border-collapse:collapse;margin-bottom:10px;}
+  table.info-grid td{border:1px solid var(--border);padding:3px 5px;vertical-align:middle;font-size:10px;}
+  table.info-grid td.label{background:var(--light-bg);font-weight:bold;white-space:nowrap;width:90px;}
+  table.checklist{width:100%;border-collapse:collapse;margin-bottom:10px;}
+  table.checklist th,table.checklist td{border:1px solid var(--border);padding:3px 5px;text-align:left;vertical-align:middle;font-size:10px;}
+  table.checklist th{background:var(--brand-blue);color:#fff;text-align:center;}
+  table.checklist td.item{width:34%;}
+  table.checklist td.check{width:5%;text-align:center;font-size:13px;}
+  table.checklist td.uwagi{width:27%;}
+  table.checklist td.nadzor{width:10%;font-weight:bold;text-align:center;}
+  .chk{color:#1a7a1a;font-weight:bold;}
+  .unchk{color:#cc0000;font-weight:bold;}
+  .nd-mark{color:#888;}
+  .footer{display:flex;border-top:2px solid var(--brand-blue);margin-top:16px;padding-top:5px;font-size:9px;}
+  .footer div{flex:1;}
+  .footer .label{color:var(--brand-blue);font-weight:bold;margin-right:3px;}
+  .page-num{text-align:right;}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="doc-id">CD-00002055</div>
+    <div class="doc-title">Checklista Pierwsza Produkcja</div>
+  </div>
+  <div class="logo">Br&#xFC;ggen</div>
+</div>
+
+<div class="subheader-bar">
+  <div class="label">Formularz</div>
+  <div>{{ production.sap_zlecenie|default:"" }}</div>
+  <div>{{ production.product_name|default:"" }}</div>
+  <div></div>
+</div>
+
+<h2 class="section-title">Checklista przed Pierwsz&#x105; produkcj&#x105;</h2>
+
+<table class="info-grid">
+  <tr>
+    <td class="label">Nr SAP (HALB):</td><td>{{ production.sap_zlecenie|default:"" }}</td>
+    <td class="label">Nr SAP (FERT):</td><td>{{ production.sap_material|default:"" }}</td>
+    <td class="label">Linia Pakuj.:</td><td>{{ production.packaging_line|default:"" }}</td>
+    <td class="label">CRM Projekt Nr.:</td><td>{{ production.crm_project_nr|default:"" }}</td>
+  </tr>
+  <tr>
+    <td class="label">Nr R&amp;D:</td><td>{{ production.rd_number|default:"" }}</td>
+    <td class="label">Receptura powi&#x105;zana:</td><td>{{ production.recipe|default:"" }}</td>
+    <td class="label">Planowany Start:</td><td>{{ production.data_produkcji|date:"d.m.Y"|default:"" }}</td>
+    <td class="label">Typ A/B:</td><td>{{ production.typ_produkcji|default:"" }}</td>
+  </tr>
+</table>
+
+<table class="checklist">
+  <tr>
+    <th>Informacje Og&#xF3;lne</th>
+    <th style="width:5%">Tak</th><th style="width:5%">Nie</th><th style="width:6%">Nie dotyczy</th>
+    <th>Uwagi</th><th style="width:9%">Nadzór</th>
+  </tr>
+  <tr>
+    <td class="item">Zlecenie produkcyjne zaktualizowane</td>
+    <td class="check">{% if cb and cb.order_updated_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.order_updated_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.order_updated_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi">{% if cb %}{{ cb.order_updated_uwagi|default:"" }}{% endif %}</td>
+    <td class="nadzor">SC</td>
+  </tr>
+  <tr>
+    <td class="item">Znak „PWPR"</td>
+    <td class="check">{% if cb and cb.pwpr_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.pwpr_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.pwpr_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi">{% if cb %}{{ cb.pwpr_uwagi|default:"" }}{% endif %}</td>
+    <td class="nadzor">SC</td>
+  </tr>
+  <tr>
+    <td class="item">Uwaga ustaw PWPR ręcznie (w przypadku odroczenia produkcji)</td>
+    <td class="check"></td><td class="check"></td><td class="check"></td>
+    <td class="uwagi"></td><td class="nadzor">SC</td>
+  </tr>
+  <tr>
+    <td class="item">Czy jest formularz analizy?</td>
+    <td class="check">{% if cb and cb.analysis_form_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.analysis_form_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.analysis_form_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi">Wersja dokumentu: {% if cb %}{{ cb.analysis_form_version|default:"" }}{% endif %}</td>
+    <td class="nadzor">QA</td>
+  </tr>
+  <tr>
+    <td class="item">Czy jest próbka zerowa?</td>
+    <td class="check">{% if cb and cb.zero_sample_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.zero_sample_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.zero_sample_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi">{% if cb %}{{ cb.zero_sample_uwagi|default:"" }}{% endif %}</td>
+    <td class="nadzor">R&amp;D / QL w przypadku przenoszenia między zakładami</td>
+  </tr>
+  <tr>
+    <td class="item">Czy jest karta produkcyjna?</td>
+    <td class="check">{% if cb and cb.production_card_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.production_card_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.production_card_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi">{% if cb %}{{ cb.production_card_uwagi|default:"" }}{% endif %}</td>
+    <td class="nadzor">R&amp;D / QA w przypadku mieszanek</td>
+  </tr>
+  <tr>
+    <td class="item">Czy maszyna produkcyjna/pakująca jest przystosowana do wymogów technologicznych?</td>
+    <td class="check">{% if cb and cb.machine_suitable_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.machine_suitable_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.machine_suitable_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi">{% if cb %}{{ cb.machine_suitable_uwagi|default:"" }}{% endif %}</td>
+    <td class="nadzor">CE / PP</td>
+  </tr>
+  <tr>
+    <td class="item">Layaout opakowania</td>
+    <td class="check">{% if cb and cb.packaging_layout_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.packaging_layout_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.packaging_layout_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi">{% if cb %}{{ cb.packaging_layout_uwagi|default:"" }}{% endif %}</td>
+    <td class="nadzor">SD</td>
+  </tr>
+  <tr>
+    <td class="item">Etykieta na karton zbiorczy</td>
+    <td class="check">{% if cb and cb.collective_label_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.collective_label_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.collective_label_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi">{% if cb %}{{ cb.collective_label_uwagi|default:"" }}{% endif %}</td>
+    <td class="nadzor">SD</td>
+  </tr>
+  <tr>
+    <td class="item">Format daty</td>
+    <td class="check">{% if cb and cb.date_format_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.date_format_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.date_format_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi">{% if cb %}{{ cb.date_format_uwagi|default:"" }}{% endif %}</td>
+    <td class="nadzor">SD</td>
+  </tr>
+  <tr>
+    <td class="item">Czy jest założony BOM?</td>
+    <td class="check">{% if cb and cb.bom_set_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.bom_set_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.bom_set_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi">{% if cb %}{{ cb.bom_set_uwagi|default:"" }}{% endif %}</td>
+    <td class="nadzor">QA</td>
+  </tr>
+  <tr>
+    <td class="item">Planowana wydajność</td>
+    <td class="check"></td><td class="check"></td><td class="check"></td>
+    <td class="uwagi">kg/h: {% if cb %}{{ cb.planned_yield_kg|default:"" }}{% endif %} &nbsp;&nbsp; Takty: {% if cb %}{{ cb.planned_yield_takty|default:"" }}{% endif %}</td>
+    <td class="nadzor">PP / R&amp;D</td>
+  </tr>
+  <tr>
+    <td class="item">Wymagane dodatkowe próbki dla klienta?</td>
+    <td class="check">{% if cb and cb.additional_samples_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.additional_samples_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.additional_samples_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi">Ilość: {% if cb %}{{ cb.additional_samples_count|default:"" }}{% endif %}</td>
+    <td class="nadzor">SD</td>
+  </tr>
+</table>
+
+<table class="checklist">
+  <tr>
+    <th>Test pakowania</th>
+    <th style="width:5%">Tak</th><th style="width:5%">Nie</th><th style="width:6%">Nie dotyczy</th>
+    <th>Uwagi</th><th style="width:9%">Nadzór</th>
+  </tr>
+  <tr style="height:20px;">
+    <td class="item">{% if cb %}{{ cb.test_packaging_1_name|default:"" }}{% endif %}</td>
+    <td class="check">{% if cb and cb.test_packaging_1_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.test_packaging_1_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.test_packaging_1_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi"></td>
+    <td class="nadzor">{% if cb %}{{ cb.test_packaging_1_nadzor|default:"" }}{% endif %}</td>
+  </tr>
+  <tr style="height:20px;">
+    <td class="item">{% if cb %}{{ cb.test_packaging_2_name|default:"" }}{% endif %}</td>
+    <td class="check">{% if cb and cb.test_packaging_2_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.test_packaging_2_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.test_packaging_2_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi"></td>
+    <td class="nadzor">{% if cb %}{{ cb.test_packaging_2_nadzor|default:"" }}{% endif %}</td>
+  </tr>
+  <tr style="height:20px;">
+    <td class="item">{% if cb %}{{ cb.test_packaging_3_name|default:"" }}{% endif %}</td>
+    <td class="check">{% if cb and cb.test_packaging_3_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.test_packaging_3_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if cb and cb.test_packaging_3_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi"></td>
+    <td class="nadzor">{% if cb %}{{ cb.test_packaging_3_nadzor|default:"" }}{% endif %}</td>
+  </tr>
+</table>
+
+<table class="info-grid">
+  <tr>
+    <td colspan="8" style="background:var(--light-bg);font-weight:bold;">Potwierdzenie gotowości do PWPR przez działy:</td>
+  </tr>
+  <tr>
+    <td class="label">R&amp;D:</td><td>{% if cb %}{{ cb.confirm_rd|default:"" }}{% endif %}</td>
+    <td class="label">PP:</td><td>{% if cb %}{{ cb.confirm_pp|default:"" }}{% endif %}</td>
+    <td class="label">CE:</td><td>{% if cb %}{{ cb.confirm_ce|default:"" }}{% endif %}</td>
+    <td class="label">QA:</td><td>{% if cb %}{{ cb.confirm_qa|default:"" }}{% endif %}</td>
+  </tr>
+  <tr>
+    <td class="label">SDP:</td><td>{% if cb %}{{ cb.confirm_sdp|default:"" }}{% endif %}</td>
+    <td class="label">SD:</td><td>{% if cb %}{{ cb.confirm_sd|default:"" }}{% endif %}</td>
+    <td colspan="4"></td>
+  </tr>
+</table>
+
+<div class="footer">
+  <div><span class="label">Version:</span> 1</div>
+  <div><span class="label">Valid until:</span> 08.01.2024</div>
+  <div><span class="label">Reviewer:</span> System Transfer</div>
+  <div><span class="label">Reason for change:</span> System Transfer</div>
+  <div class="page-num">01 | 02</div>
+</div>
+
+</body>
+</html>

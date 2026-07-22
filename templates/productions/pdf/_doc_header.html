@@ -1,0 +1,50 @@
+{% comment %}Requires: production, page_subtitle{% endcomment %}
+<table style="width:100%; border-collapse:collapse; border-bottom:2pt solid #7a1f2b; margin-bottom:4px;">
+  <tr>
+    <td style="border:none; padding:2px 4px 4px 0; vertical-align:bottom;">
+      <div style="color:#7a1f2b; font-weight:bold; font-size:16px;">CD-00002055</div>
+      <div style="font-size:13px; font-weight:600; color:#333;">Checklista Pierwsza Produkcja</div>
+    </td>
+    <td style="border:none; text-align:right; vertical-align:bottom; padding:2px 0 4px 4px;">
+      <div style="font-family:Georgia; font-style:italic; font-weight:bold; font-size:22px; color:#e2231a; letter-spacing:1px;">Br&#xFC;ggen</div>
+    </td>
+  </tr>
+</table>
+
+<table style="width:100%; border:1px solid #000; border-collapse:collapse; margin-bottom:10px;">
+  <tr>
+    <td style="background:#f5e9ea; font-weight:bold; width:100px; padding:3px 6px; border:1px solid #000;">Formularz</td>
+    <td style="padding:3px 6px; border:1px solid #000;"></td>
+    <td style="padding:3px 6px; border:1px solid #000;"></td>
+    <td style="padding:3px 6px; border:none;"></td>
+  </tr>
+</table>
+
+<h2 style="font-size:13px; text-decoration:underline; margin:0 0 8px 0; color:#7a1f2b;">{{ page_subtitle }}</h2>
+
+<table style="width:100%; border-collapse:collapse; margin-bottom:10px;" class="ig">
+  <tr>
+    <td class="lbl">Nr SAP (HALB):</td><td class="val">{{ production.sap_zlecenie|default:"" }}</td>
+    <td class="lbl">Nr SAP (FERT):</td><td class="val">{{ production.sap_material|default:"" }}</td>
+    <td class="lbl">Linia Pakuj.:</td><td class="val">{{ production.packaging_line|default:"" }}</td>
+    <td class="lbl">Nr R&amp;D:</td><td class="val">{{ production.rd_number|default:"" }}</td>
+  </tr>
+  <tr>
+    <td class="lbl">Receptura:</td><td class="val">{{ production.recipe|default:"" }}</td>
+    <td class="lbl">CRM Projekt Nr.:</td><td class="val">{{ production.crm_project_nr|default:"" }}</td>
+    <td class="lbl">Data produkcji:</td><td class="val">{{ production.data_produkcji|date:"d.m.Y"|default:"" }}</td>
+    <td class="lbl">Produkt:</td><td class="val">{{ production.product_name|default:"" }}</td>
+  </tr>
+  <tr>
+    <td class="lbl">R&amp;D:</td><td class="val">{{ production.person_rd.get_full_name|default:"" }}</td>
+    <td class="lbl">SC:</td><td class="val">{{ production.person_sc.get_full_name|default:"" }}</td>
+    <td class="lbl">QL:</td><td class="val">{{ production.person_ql.get_full_name|default:"" }}</td>
+    <td class="lbl">QA:</td><td class="val">{{ production.person_qa.get_full_name|default:"" }}</td>
+  </tr>
+  <tr>
+    <td class="lbl">SD:</td><td class="val">{{ production.person_sd.get_full_name|default:"" }}</td>
+    <td class="lbl">SDP:</td><td class="val">{{ production.person_sdp.get_full_name|default:"" }}</td>
+    <td class="lbl">PP:</td><td class="val">{{ production.person_pp.get_full_name|default:"" }}</td>
+    <td class="lbl">CE:</td><td class="val">{{ production.person_ce.get_full_name|default:"" }}</td>
+  </tr>
+</table>

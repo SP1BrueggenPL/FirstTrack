@@ -1,0 +1,751 @@
+import json
+import base64
+import logging
+from .pdf_views import pdf_etap1, pdf_etap2, pdf_etap3
+from django.shortcuts import render, get_object_or_404, redirect
+from django.contrib import messages
+from django.contrib.auth.models import User
+from django.http import JsonResponse
+from django.utils import timezone
+from django.core.mail import send_mail
+from django.conf import settings
+from django.views.decorators.http import require_POST
+from django.contrib.auth.decorators import login_required
+
+from .models import (
+    FirstProduction, ChecklistBefore, ChecklistAfter,
+    EmailLog, UserProfile, DEPT_CHOICES,
+)
+from .forms import (
+    FirstProductionForm, SAPImportForm,
+    ChecklistBeforeForm,
+    ChecklistAfterSensoryForm, ChecklistAfterPackagingForm, ChecklistAfterAcceptanceForm,
+    ChecklistAfterHeaderForm,
+    SensoryParamFormSet, PackagingItemFormSet,
+    UserCreateForm, UserEditForm, UserPasswordForm,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# ──────────────────────────────────────────────
+# Dashboard
+# ──────────────────────────────────────────────
+
+@login_required
+def dashboard(request):
+    productions = FirstProduction.objects.select_related(
+        'person_sd', 'acceptor'
+    ).all()
+
+    status_filter = request.GET.get('status', '')
+    search = request.GET.get('q', '')
+
+    if status_filter:
+        productions = productions.filter(status=status_filter)
+    if search:
+        from django.db.models import Q
+        productions = productions.filter(
+            Q(product_name__icontains=search) |
+            Q(sap_zlecenie__icontains=search) |
+            Q(sap_material__icontains=search) |
+            Q(layout__icontains=search) |
+            Q(zmiany__icontains=search) |
+            Q(typ_produkcji__icontains=search) |
+            Q(person_sd__first_name__icontains=search) |
+            Q(person_sd__last_name__icontains=search)
+        )
+
+    context = {
+        'productions': productions,
+        'status_choices': FirstProduction.STATUS_CHOICES,
+        'status_filter': status_filter,
+        'search': search,
+        'counts': {
+            'total':     FirstProduction.objects.count(),
+            'nowa':      FirstProduction.objects.filter(status='nowa').count(),
+            'etap1':     FirstProduction.objects.filter(status='etap1').count(),
+            'etap2':     FirstProduction.objects.filter(status='etap2').count(),
+            'etap3':     FirstProduction.objects.filter(status='etap3').count(),
+            'zwolniona': FirstProduction.objects.filter(status='zwolniona').count(),
+        },
+    }
+    return render(request, 'productions/dashboard.html', context)
+
+
+# ──────────────────────────────────────────────
+# Import SAP (AI ekstrakcja)
+# ──────────────────────────────────────────────
+
+@login_required
+def import_sap(request):
+    form = SAPImportForm()
+    extracted = None
+
+    if request.method == 'POST':
+        form = SAPImportForm(request.POST, request.FILES)
+        if form.is_valid():
+            image_file = request.FILES['screenshot']
+            image_data = image_file.read()
+            image_b64  = base64.standard_b64encode(image_data).decode('utf-8')
+            media_type = image_file.content_type or 'image/jpeg'
+
+            extracted = _extract_sap_data(image_b64, media_type)
+            if extracted:
+                request.session['sap_extracted'] = extracted
+                messages.success(request, f'AI wyciągnął dane: {len(extracted)} wierszy. Sprawdź i zatwierdź poniżej.')
+            else:
+                messages.error(request, 'Nie udało się wyciągnąć danych. Sprawdź klucz API lub spróbuj ręcznie.')
+
+    prefill = request.session.pop('sap_extracted', None)
+    return render(request, 'productions/import_sap.html', {
+        'form': form,
+        'extracted': prefill,
+    })
+
+
+def _extract_sap_data(image_b64: str, media_type: str) -> list | None:
+    endpoint = getattr(settings, 'AZURE_OPENAI_ENDPOINT', '')
+    api_key  = getattr(settings, 'AZURE_OPENAI_KEY', '')
+    deployment = getattr(settings, 'AZURE_OPENAI_DEPLOYMENT', 'gpt-4o')
+
+    if not api_key or not endpoint:
+        logger.warning('AZURE_OPENAI_KEY / AZURE_OPENAI_ENDPOINT nie ustawione')
+        return None
+
+    try:
+        from openai import AzureOpenAI
+        client = AzureOpenAI(
+            api_key=api_key,
+            azure_endpoint=endpoint,
+            api_version='2024-08-01-preview',
+        )
+
+        prompt = """Masz przed sobą screenshot tabeli z SAP lub tabeli planowania produkcji.
+
+Wyciągnij WSZYSTKIE wiersze danych i zwróć je jako JSON array.
+Każdy wiersz to obiekt z dokładnie tymi polami:
+- sap_zlecenie    (numer zlecenia SAP, kolumna "Zlecenie" lub "Zlecenia", np. "11333525")
+- sap_material    (numer materiału, kolumna "Materiał" lub "Materi...", np. "28124")
+- product_name    (opis produktu, kolumna "Krótki tekst materiału" lub "Opis", np. "MSM Crunchy Pink 168x35g TC")
+- data_produkcji  (data produkcji/rozp., kolumna "RozpWgH" lub "data produkcji", format YYYY-MM-DD, np. "2026-06-23")
+
+Daty w formacie DD.MM.YYYY lub D.MM.YYYY zamień na YYYY-MM-DD.
+Jeśli pole jest nieczytelne lub brak, użyj pustego stringa "".
+Zwróć TYLKO JSON array, bez żadnego dodatkowego tekstu, komentarzy ani formatowania markdown."""
+
+        response = client.chat.completions.create(
+            model=deployment,
+            max_tokens=2000,
+            messages=[{
+                'role': 'user',
+                'content': [
+                    {
+                        'type': 'image_url',
+                        'image_url': {'url': f'data:{media_type};base64,{image_b64}'},
+                    },
+                    {'type': 'text', 'text': prompt},
+                ],
+            }],
+        )
+
+        text = response.choices[0].message.content.strip()
+        # Usuń ewentualne bloki markdown
+        if '```' in text:
+            parts = text.split('```')
+            for part in parts:
+                part = part.strip()
+                if part.startswith('json'):
+                    part = part[4:].strip()
+                if part.startswith('['):
+                    text = part
+                    break
+        return json.loads(text)
+
+    except Exception as e:
+        logger.error('Błąd ekstrakcji SAP (Azure OpenAI): %s', e, exc_info=True)
+        return None
+
+
+# ──────────────────────────────────────────────
+# API – user email (do auto-fill akceptującego)
+# ──────────────────────────────────────────────
+
+@login_required
+def api_user_email(request, pk):
+    try:
+        user = User.objects.get(pk=pk)
+        return JsonResponse({'email': user.email, 'name': user.get_full_name()})
+    except User.DoesNotExist:
+        return JsonResponse({'email': '', 'name': ''})
+
+
+# ──────────────────────────────────────────────
+# API – prefill z SAP
+# ──────────────────────────────────────────────
+
+@login_required
+@require_POST
+def api_prefill_sap(request):
+    try:
+        rows = json.loads(request.body)
+        if isinstance(rows, dict):
+            rows = [rows]
+        created_urls = []
+        for data in rows:
+            date_val = data.get('data_produkcji') or None
+            prod = FirstProduction.objects.create(
+                sap_zlecenie=data.get('sap_zlecenie', ''),
+                sap_material=data.get('sap_material', ''),
+                product_name=data.get('product_name', '') or 'Nowa produkcja',
+                data_produkcji=date_val,
+            )
+            from django.urls import reverse
+            created_urls.append(reverse('production_detail', args=[prod.pk]))
+        return JsonResponse({'ok': True, 'redirect': created_urls[0] if len(created_urls) == 1 else '/dashboard/'})
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=400)
+
+
+# ──────────────────────────────────────────────
+# Nowa / edycja produkcji
+# ──────────────────────────────────────────────
+
+@login_required
+def production_new(request):
+    prefill = request.session.pop('sap_prefill', None)
+    initial = {}
+    if prefill:
+        # Mapuj pola z AI do pól formularza
+        initial = {
+            'sap_zlecenie':  prefill.get('sap_zlecenie', ''),
+            'sap_material':  prefill.get('sap_material', ''),
+            'product_name':  prefill.get('product_name', ''),
+            'data_produkcji': prefill.get('data_produkcji', '') or None,
+        }
+
+    form = FirstProductionForm(initial=initial)
+    if request.method == 'POST':
+        form = FirstProductionForm(request.POST, request.FILES)
+        if form.is_valid():
+            prod = form.save()
+            # Auto-fill email akceptującego jeśli nie wpisano
+            if prod.acceptor and not prod.acceptor_email:
+                prod.acceptor_email = prod.acceptor.email
+                prod.save(update_fields=['acceptor_email'])
+            messages.success(request, f'Produkcja „{prod.product_name}" została dodana.')
+            return redirect('production_detail', pk=prod.pk)
+
+    return render(request, 'productions/production_form.html', {
+        'form': form, 'title': 'Nowa pierwsza produkcja',
+    })
+
+
+@login_required
+def production_edit(request, pk):
+    prod = get_object_or_404(FirstProduction, pk=pk)
+    if prod.status == 'zwolniona':
+        messages.error(request, 'Produkcja zwolniona do sprzedaży – edycja jest zablokowana.')
+        return redirect('production_detail', pk=pk)
+    form = FirstProductionForm(instance=prod)
+    if request.method == 'POST':
+        form = FirstProductionForm(request.POST, request.FILES, instance=prod)
+        if form.is_valid():
+            prod = form.save()
+            if prod.acceptor and not prod.acceptor_email:
+                prod.acceptor_email = prod.acceptor.email
+                prod.save(update_fields=['acceptor_email'])
+            messages.success(request, 'Dane produkcji zaktualizowane.')
+            return redirect('production_detail', pk=prod.pk)
+    return render(request, 'productions/production_form.html', {
+        'form': form, 'production': prod,
+        'title': f'Edytuj: {prod.product_name}',
+    })
+
+
+# ──────────────────────────────────────────────
+# Szczegóły produkcji
+# ──────────────────────────────────────────────
+
+@login_required
+def production_detail(request, pk):
+    prod = get_object_or_404(
+        FirstProduction.objects.select_related(
+            'person_rd', 'person_sc', 'person_ql', 'person_qa',
+            'person_sd', 'person_sdp', 'person_pp', 'person_ce', 'acceptor',
+        ),
+        pk=pk
+    )
+
+    if prod.status == 'zwolniona':
+        edit_form = None
+    elif request.method == 'POST' and 'save_basic' in request.POST:
+        edit_form = FirstProductionForm(request.POST, instance=prod)
+        if edit_form.is_valid():
+            edit_form.save()
+            messages.success(request, 'Dane produkcji zaktualizowane.')
+            return redirect('production_detail', pk=pk)
+    else:
+        edit_form = FirstProductionForm(instance=prod)
+
+    checklist_before = getattr(prod, 'checklist_before', None)
+    checklist_after  = getattr(prod, 'checklist_after',  None)
+
+    if checklist_after:
+        cb = checklist_before
+        update_fields = []
+        if checklist_after.production_date is None and prod.data_produkcji:
+            checklist_after.production_date = prod.data_produkcji
+            update_fields.append('production_date')
+        if not checklist_after.packaging_line and prod.packaging_line:
+            checklist_after.packaging_line = prod.packaging_line
+            update_fields.append('packaging_line')
+        if cb:
+            if not checklist_after.yield_kg and cb.planned_yield_kg:
+                checklist_after.yield_kg = cb.planned_yield_kg
+                update_fields.append('yield_kg')
+            if not checklist_after.yield_takty and cb.planned_yield_takty:
+                checklist_after.yield_takty = cb.planned_yield_takty
+                update_fields.append('yield_takty')
+        if update_fields:
+            checklist_after.save(update_fields=update_fields)
+
+    confirmations = []
+    if checklist_before:
+        confirmations = [
+            ('R&D', checklist_before.confirm_rd),
+            ('PP',  checklist_before.confirm_pp),
+            ('CE',  checklist_before.confirm_ce),
+            ('QA',  checklist_before.confirm_qa),
+            ('SDP', checklist_before.confirm_sdp),
+            ('SD',  checklist_before.confirm_sd),
+        ]
+
+    return render(request, 'productions/production_detail.html', {
+        'production': prod,
+        'edit_form': edit_form,
+        'checklist_before': checklist_before,
+        'checklist_after':  checklist_after,
+        'checklist_confirmations': confirmations,
+    })
+
+
+# ──────────────────────────────────────────────
+# Etap I – Checklista przed
+# ──────────────────────────────────────────────
+
+@login_required
+def checklist_before(request, pk):
+    prod     = get_object_or_404(FirstProduction, pk=pk)
+    instance = getattr(prod, 'checklist_before', None)
+
+    form = ChecklistBeforeForm(instance=instance)
+    if request.method == 'POST':
+        form = ChecklistBeforeForm(request.POST, instance=instance)
+        if form.is_valid():
+            cb = form.save(commit=False)
+            cb.production = prod
+            if 'complete' in request.POST:
+                cb.completed_at = timezone.now()
+                prod.status = 'etap1'
+                prod.save()
+            cb.save()
+            messages.success(request, 'Checklista przed produkcją zapisana.')
+            return redirect('production_detail', pk=pk)
+
+    return render(request, 'productions/checklist_before.html', {
+        'form': form, 'production': prod,
+    })
+
+
+# ──────────────────────────────────────────────
+# Etap II – pomocnicza funkcja
+# ──────────────────────────────────────────────
+
+def _get_or_create_checklist_after(prod):
+    cb = getattr(prod, 'checklist_before', None)
+    instance = getattr(prod, 'checklist_after', None)
+    if instance is None:
+        instance = ChecklistAfter(
+            production=prod,
+            production_date=prod.data_produkcji,
+            packaging_line=prod.packaging_line or '',
+            yield_kg=cb.planned_yield_kg if cb else '',
+            yield_takty=cb.planned_yield_takty if cb else '',
+        )
+        instance.save()
+    else:
+        update_fields = []
+        if instance.production_date is None and prod.data_produkcji:
+            instance.production_date = prod.data_produkcji
+            update_fields.append('production_date')
+        if not instance.packaging_line and prod.packaging_line:
+            instance.packaging_line = prod.packaging_line
+            update_fields.append('packaging_line')
+        if cb:
+            if not instance.yield_kg and cb.planned_yield_kg:
+                instance.yield_kg = cb.planned_yield_kg
+                update_fields.append('yield_kg')
+            if not instance.yield_takty and cb.planned_yield_takty:
+                instance.yield_takty = cb.planned_yield_takty
+                update_fields.append('yield_takty')
+        if update_fields:
+            instance.save(update_fields=update_fields)
+    return instance
+
+
+def _all_sig_fields(prod):
+    return [
+        ('R&D', 'sig_rd',  prod.person_rd),
+        ('SC',  'sig_sc',  prod.person_sc),
+        ('QL',  'sig_ql',  prod.person_ql),
+        ('QA',  'sig_qa',  prod.person_qa),
+        ('SD',  'sig_sd',  prod.person_sd),
+        ('SDP', 'sig_sdp', prod.person_sdp),
+        ('PP',  'sig_pp',  prod.person_pp),
+        ('CE',  'sig_ce',  prod.person_ce),
+    ]
+
+
+# Etap II krok 1 – sensoryczne
+@login_required
+def checklist_after(request, pk):
+    return redirect('checklist_after_sensory', pk=pk)
+
+
+@login_required
+def checklist_after_sensory(request, pk):
+    prod     = get_object_or_404(FirstProduction, pk=pk)
+    instance = _get_or_create_checklist_after(prod)
+    sensory_fs = SensoryParamFormSet(queryset=instance.sensory_params.all(), prefix='sensory')
+    form = ChecklistAfterSensoryForm(instance=instance)
+
+    if request.method == 'POST':
+        form       = ChecklistAfterSensoryForm(request.POST, instance=instance)
+        sensory_fs = SensoryParamFormSet(request.POST, queryset=instance.sensory_params.all(), prefix='sensory')
+        if form.is_valid() and sensory_fs.is_valid():
+            ca = form.save(commit=False)
+            ca.production = prod
+            ca.save()
+            sensory_fs.save()
+            messages.success(request, 'Parametry sensoryczne zapisane.')
+            if 'next' in request.POST:
+                return redirect('checklist_after_packaging', pk=pk)
+            return redirect('checklist_after_sensory', pk=pk)
+
+    return render(request, 'productions/checklist_after_sensory.html', {
+        'form': form,
+        'sensory_fs': sensory_fs,
+        'production': prod,
+        'checklist': instance,
+        'team_sig_fields': _all_sig_fields(prod),
+        'step': 1,
+    })
+
+
+# Etap II krok 2 – pakowanie
+@login_required
+def checklist_after_packaging(request, pk):
+    prod     = get_object_or_404(FirstProduction, pk=pk)
+    instance = _get_or_create_checklist_after(prod)
+    packaging_fs = PackagingItemFormSet(queryset=instance.packaging_items.all(), prefix='packaging')
+    form = ChecklistAfterPackagingForm(instance=instance)
+
+    all_sigs = _all_sig_fields(prod)
+    unsigned = [(role, fname, person) for role, fname, person in all_sigs
+                if person and not getattr(instance, fname)]
+
+    if request.method == 'POST':
+        form         = ChecklistAfterPackagingForm(request.POST, request.FILES, instance=instance)
+        packaging_fs = PackagingItemFormSet(request.POST, queryset=instance.packaging_items.all(), prefix='packaging')
+        if form.is_valid() and packaging_fs.is_valid():
+            ca = form.save(commit=False)
+            if 'complete' in request.POST:
+                ca.completed_at = timezone.now()
+                prod.status = 'etap2'
+                prod.save()
+            ca.save()
+            packaging_fs.save()
+            messages.success(request, 'Etap II zatwierdzony.' if 'complete' in request.POST else 'Checklista pakowania zapisana.')
+            if 'complete' in request.POST:
+                return redirect('production_detail', pk=pk)
+            return redirect('checklist_after_packaging', pk=pk)
+
+    return render(request, 'productions/checklist_after_packaging.html', {
+        'form': form,
+        'packaging_fs': packaging_fs,
+        'production': prod,
+        'checklist': instance,
+        'unsigned_sig_fields': unsigned,
+        'step': 2,
+    })
+
+
+# Etap II krok 3 – akceptacja SD
+@login_required
+def checklist_after_acceptance(request, pk):
+    prod     = get_object_or_404(FirstProduction, pk=pk)
+    instance = _get_or_create_checklist_after(prod)
+    form = ChecklistAfterAcceptanceForm(instance=instance)
+
+    if request.method == 'POST':
+        form = ChecklistAfterAcceptanceForm(request.POST, instance=instance)
+        if form.is_valid():
+            ca = form.save(commit=False)
+            ca.production = prod
+            if 'complete' in request.POST:
+                ca.completed_at = timezone.now()
+                prod.status = 'etap2'
+                prod.save()
+            ca.save()
+            messages.success(request, 'Etap II zatwierdzony.' if 'complete' in request.POST else 'Akceptacja zapisana.')
+            return redirect('production_detail', pk=pk)
+
+    return render(request, 'productions/checklist_after_acceptance.html', {
+        'form': form,
+        'production': prod,
+        'checklist': instance,
+        'step': 3,
+    })
+
+
+# ──────────────────────────────────────────────
+# Etap III – Akceptacja SD + Zwolnienie
+# ──────────────────────────────────────────────
+
+@login_required
+def release_production(request, pk):
+    prod     = get_object_or_404(FirstProduction, pk=pk)
+    instance = _get_or_create_checklist_after(prod)
+    form = ChecklistAfterAcceptanceForm(instance=instance)
+
+    if request.method == 'POST':
+        form = ChecklistAfterAcceptanceForm(request.POST, request.FILES, instance=instance)
+        if form.is_valid():
+            ca = form.save(commit=False)
+            ca.production = prod
+            ca.save()
+            if 'release' in request.POST:
+                prod.status = 'zwolniona'
+                prod.save()
+                messages.success(request, f'Produkcja „{prod.product_name}" zwolniona do sprzedaży.')
+            else:
+                messages.success(request, 'Akceptacja zapisana.')
+            return redirect('production_detail', pk=pk)
+
+    # podpisy zespołu do podglądu
+    ca = instance
+    signed = []
+    for role, fname, person in _all_sig_fields(prod):
+        if person and getattr(ca, fname):
+            signed.append((role, fname, person, getattr(ca, fname)))
+
+    return render(request, 'productions/checklist_after_acceptance.html', {
+        'form': form,
+        'production': prod,
+        'checklist': instance,
+        'signed_team': signed,
+        'step': 3,
+    })
+
+
+@login_required
+@require_POST
+def production_delete(request, pk):
+    if not request.user.is_staff:
+        messages.error(request, 'Brak uprawnień do usunięcia rekordu.')
+        return redirect('production_detail', pk=pk)
+    prod = get_object_or_404(FirstProduction, pk=pk)
+    name = prod.product_name
+    prod.delete()
+    messages.success(request, f'Produkcja „{name}" została usunięta.')
+    return redirect('dashboard')
+
+
+# ──────────────────────────────────────────────
+# Email
+# ──────────────────────────────────────────────
+
+@login_required
+@require_POST
+def send_production_email(request, pk):
+    prod = get_object_or_404(FirstProduction, pk=pk)
+
+    subject = f'[FirstTrack] Pierwsza produkcja: {prod.product_name} – {prod.data_produkcji or "data TBD"}'
+    body    = _build_email_body(prod)
+
+    recipients = []
+    email = prod.acceptor_email or (prod.acceptor.email if prod.acceptor else '')
+    if email:
+        recipients.append(email)
+    group_emails = settings.PRODUCTION_EMAIL_GROUPS
+    if group_emails:
+        recipients += [e.strip() for e in group_emails.split(',') if e.strip()]
+    recipients = list(set(recipients))
+
+    success = True
+    error_msg = ''
+    try:
+        send_mail(subject=subject, message=body,
+                  from_email=settings.DEFAULT_FROM_EMAIL,
+                  recipient_list=recipients, fail_silently=False)
+    except Exception as e:
+        success = False
+        error_msg = str(e)
+        logger.error('Błąd wysyłki maila: %s', e)
+
+    EmailLog.objects.create(
+        production=prod, recipient=', '.join(recipients),
+        subject=subject, body=body, success=success, error_msg=error_msg,
+    )
+
+    if success:
+        prod.email_sent = True
+        prod.email_sent_at = timezone.now()
+        prod.save()
+        messages.success(request, f'Mail wysłany do: {", ".join(recipients)}')
+    else:
+        messages.error(request, f'Błąd wysyłki: {error_msg}')
+
+    return redirect('production_detail', pk=pk)
+
+
+def _build_email_body(prod: FirstProduction) -> str:
+    def name(user):
+        return user.get_full_name() if user else '–'
+
+    lines = [
+        f'Pierwsza produkcja: {prod.product_name}',
+        f'Zlecenie SAP:      {prod.sap_zlecenie or "–"}',
+        f'Nr materiału SAP:  {prod.sap_material or "–"}',
+        f'Data produkcji:    {prod.data_produkcji or "–"}',
+        f'Typ produkcji:     {prod.typ_produkcji or "–"}',
+        f'Layout:            {prod.layout or "–"}',
+        f'Zmiany:            {prod.zmiany or "–"}',
+        f'Linia pakująca:    {prod.packaging_line or "–"}',
+        '',
+        f'Osoba SD:          {name(prod.person_sd)}',
+        f'Akceptujący:       {name(prod.acceptor)}',
+        '',
+        'Zespół:',
+        f'  R&D: {name(prod.person_rd)}',
+        f'  SC:  {name(prod.person_sc)}',
+        f'  QA:  {name(prod.person_qa)}',
+        f'  PP:  {name(prod.person_pp)}',
+        f'  CE:  {name(prod.person_ce)}',
+        '',
+        '-- FirstTrack, H. & J. Brüggen KG --',
+    ]
+    return '\n'.join(lines)
+
+
+# ══════════════════════════════════════════════
+# Zarządzanie użytkownikami
+# ══════════════════════════════════════════════
+
+@login_required
+def user_list(request):
+    users = User.objects.select_related('profile').order_by(
+        'profile__department', 'last_name', 'first_name'
+    )
+    # Grupuj po dziale
+    by_dept = {}
+    for u in users:
+        dept = getattr(u, 'profile', None)
+        dept_label = dept.get_department_display() if dept and dept.department else 'Brak działu'
+        by_dept.setdefault(dept_label, []).append(u)
+
+    return render(request, 'productions/user_list.html', {
+        'users_by_dept': by_dept,
+        'total': users.count(),
+    })
+
+
+@login_required
+def user_create(request):
+    form = UserCreateForm()
+    if request.method == 'POST':
+        form = UserCreateForm(request.POST)
+        if form.is_valid():
+            d = form.cleaned_data
+            # username = email (przed @)
+            username_base = d['email'].split('@')[0].lower()
+            username = username_base
+            counter = 1
+            while User.objects.filter(username=username).exists():
+                username = f'{username_base}{counter}'
+                counter += 1
+
+            user = User.objects.create_user(
+                username=username,
+                email=d['email'],
+                password=d['password1'],
+                first_name=d['first_name'],
+                last_name=d['last_name'],
+            )
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            profile.department = d['department']
+            profile.phone = d.get('phone', '')
+            profile.save()
+
+            messages.success(request, f'Konto dla {user.get_full_name()} zostało utworzone.')
+            return redirect('user_list')
+
+    return render(request, 'productions/user_form.html', {
+        'form': form, 'title': 'Nowe konto użytkownika', 'is_create': True,
+    })
+
+
+@login_required
+def user_edit(request, pk):
+    user = get_object_or_404(User, pk=pk)
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+
+    initial = {
+        'first_name': user.first_name,
+        'last_name':  user.last_name,
+        'email':      user.email,
+        'department': profile.department,
+        'phone':      profile.phone,
+        'is_active':  user.is_active,
+        'is_staff':   user.is_staff,
+    }
+    form = UserEditForm(initial=initial)
+
+    if request.method == 'POST':
+        form = UserEditForm(request.POST)
+        if form.is_valid():
+            d = form.cleaned_data
+            user.first_name = d['first_name']
+            user.last_name  = d['last_name']
+            user.email      = d['email']
+            user.is_active  = d['is_active']
+            user.is_staff   = d['is_staff']
+            user.save()
+            profile.department = d['department']
+            profile.phone      = d.get('phone', '')
+            profile.save()
+            messages.success(request, f'Dane użytkownika {user.get_full_name()} zaktualizowane.')
+            return redirect('user_list')
+
+    return render(request, 'productions/user_form.html', {
+        'form': form, 'edit_user': user, 'title': f'Edytuj: {user.get_full_name()}',
+    })
+
+
+@login_required
+def user_password(request, pk):
+    user = get_object_or_404(User, pk=pk)
+    form = UserPasswordForm()
+
+    if request.method == 'POST':
+        form = UserPasswordForm(request.POST)
+        if form.is_valid():
+            user.set_password(form.cleaned_data['password1'])
+            user.save()
+            messages.success(request, f'Hasło dla {user.get_full_name()} zostało zmienione.')
+            return redirect('user_list')
+
+    return render(request, 'productions/user_password.html', {
+        'form': form, 'edit_user': user,
+    })

@@ -1,0 +1,288 @@
+{% extends "productions/base.html" %}
+{% block title %}{{ production.product_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="mb-0">{{ production.product_name }}</h4>
+    <small class="text-muted">
+      Zlecenie: <strong>{{ production.sap_zlecenie|default:"–" }}</strong>
+      &nbsp;|&nbsp; Materiał: <strong>{{ production.sap_material|default:"–" }}</strong>
+      {% if production.typ_produkcji %}
+        &nbsp;|&nbsp; Typ: <span class="badge bg-info text-dark">{{ production.typ_produkcji }}</span>
+      {% endif %}
+    </small>
+  </div>
+  <div class="d-flex gap-2">
+    {% if production.status != 'zwolniona' %}
+    <a href="{% url 'production_edit' production.pk %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-pencil me-1"></i>Edytuj
+    </a>
+    {% else %}
+    <span class="btn btn-outline-secondary btn-sm disabled" title="Produkcja zwolniona – edycja zablokowana">
+      <i class="bi bi-lock me-1"></i>Edycja zablokowana
+    </span>
+    {% endif %}
+    {% if request.user.is_staff %}
+    <form method="post" action="{% url 'production_delete' production.pk %}"
+          onsubmit="return confirm('Na pewno usunąć tę produkcję? Operacja jest nieodwracalna.')">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-outline-danger btn-sm">
+        <i class="bi bi-trash me-1"></i>Usuń
+      </button>
+    </form>
+    {% endif %}
+    <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Powrót
+    </a>
+  </div>
+</div>
+
+<!-- Pasek etapów -->
+<div class="step-indicator mb-4">
+  <div class="step {% if production.status == 'nowa' %}active{% elif production.status != 'nowa' %}done{% endif %}">
+    <i class="bi bi-1-circle me-1"></i>Dane
+  </div>
+  <div class="step {% if production.status == 'etap1' %}active{% elif production.status in 'etap2,etap3,zwolniona' %}done{% endif %}">
+    <i class="bi bi-2-circle me-1"></i>Etap I
+  </div>
+  <div class="step {% if production.status == 'etap2' %}active{% elif production.status in 'etap3,zwolniona' %}done{% endif %}">
+    <i class="bi bi-3-circle me-1"></i>Etap II
+  </div>
+  <div class="step {% if production.status == 'etap3' %}active{% elif production.status == 'zwolniona' %}done{% endif %}">
+    <i class="bi bi-4-circle me-1"></i>Etap III
+  </div>
+  <div class="step {% if production.status == 'zwolniona' %}done{% endif %}">
+    <i class="bi bi-check-circle me-1"></i>Zwolniona
+  </div>
+</div>
+
+<div class="row g-3" style="min-height: calc(100vh - 220px);">
+
+  <!-- Lewa kolumna: dane -->
+  <div class="col-md-4 d-flex flex-column">
+
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-upc-scan me-2"></i>Dane SAP</div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-borderless mb-0 small">
+          <tr><td class="text-muted ps-3" style="width:110px">Zlecenie</td><td class="fw-semibold">{{ production.sap_zlecenie|default:"–" }}</td></tr>
+          <tr><td class="text-muted ps-3">Materiał</td><td>{{ production.sap_material|default:"–" }}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-calendar3 me-2"></i>Szczegółowe informacje</div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-borderless mb-0 small">
+          <tr><td class="text-muted ps-3" style="width:110px">Data prod.</td>
+              <td><strong>{{ production.data_produkcji|default:"–" }}</strong></td></tr>
+          <tr><td class="text-muted ps-3">Typ A/B</td>
+              <td>{% if production.typ_produkcji %}<span class="badge bg-info text-dark">{{ production.typ_produkcji }}</span>{% else %}<span class="text-muted">–</span>{% endif %}</td></tr>
+          <tr><td class="text-muted ps-3">Layout</td><td>{{ production.layout|default:"–" }}</td></tr>
+          <tr><td class="text-muted ps-3">Zmiany</td><td>{{ production.zmiany|default:"–" }}</td></tr>
+          {% if production.komentarz %}<tr><td class="text-muted ps-3">Komentarz</td><td class="fst-italic">{{ production.komentarz }}</td></tr>{% endif %}
+          {% if production.packaging_line %}<tr><td class="text-muted ps-3">Linia pak.</td><td>{{ production.packaging_line }}</td></tr>{% endif %}
+          {% if production.recipe %}<tr><td class="text-muted ps-3">Receptura</td><td>{{ production.recipe }}</td></tr>{% endif %}
+        </table>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-people me-2"></i>Zespół</div>
+      <div class="card-body p-0">
+        {% with rd=production.person_rd sc=production.person_sc ql=production.person_ql qa=production.person_qa sd=production.person_sd sdp=production.person_sdp pp=production.person_pp ce=production.person_ce %}
+        {% if rd or sc or ql or qa or sd or sdp or pp or ce %}
+        <table class="table table-sm table-borderless mb-0 small">
+          {% if rd %}<tr><td class="text-muted ps-3" style="width:45px">R&amp;D</td><td>{{ rd.get_full_name }}</td></tr>{% endif %}
+          {% if sc %}<tr><td class="text-muted ps-3">SC</td><td>{{ sc.get_full_name }}</td></tr>{% endif %}
+          {% if ql %}<tr><td class="text-muted ps-3">QL</td><td>{{ ql.get_full_name }}</td></tr>{% endif %}
+          {% if qa %}<tr><td class="text-muted ps-3">QA</td><td>{{ qa.get_full_name }}</td></tr>{% endif %}
+          {% if sd %}<tr><td class="text-muted ps-3">SD</td><td>{{ sd.get_full_name }}</td></tr>{% endif %}
+          {% if sdp %}<tr><td class="text-muted ps-3">SDP</td><td>{{ sdp.get_full_name }}</td></tr>{% endif %}
+          {% if pp %}<tr><td class="text-muted ps-3">PP</td><td>{{ pp.get_full_name }}</td></tr>{% endif %}
+          {% if ce %}<tr><td class="text-muted ps-3">CE</td><td>{{ ce.get_full_name }}</td></tr>{% endif %}
+        </table>
+        {% else %}
+        <div class="px-3 py-2 small text-muted fst-italic">
+          <i class="bi bi-info-circle me-1"></i>Brak przypisanego zespołu.
+        </div>
+        {% endif %}
+        {% endwith %}
+        {% if production.acceptor %}
+        <div class="px-3 pb-2 pt-1 border-top small">
+          <i class="bi bi-person-check text-success me-1"></i>
+          <strong>Akceptujący:</strong> {{ production.acceptor.get_full_name }}<br>
+          <span class="text-muted">{{ production.acceptor_email|default:production.acceptor.email }}</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card mb-0" style="flex-grow:1">
+      <div class="card-header"><i class="bi bi-activity me-2"></i>Status produkcji</div>
+      <div class="card-body d-flex align-items-center justify-content-center">
+        <div class="text-center">
+          <div class="mb-2">
+            {% if production.status == 'nowa' %}<i class="bi bi-circle text-secondary" style="font-size:2.5rem"></i>
+            {% elif production.status == 'etap1' %}<i class="bi bi-1-circle-fill" style="font-size:2.5rem; color:var(--br-burg)"></i>
+            {% elif production.status == 'etap2' %}<i class="bi bi-2-circle-fill" style="font-size:2.5rem; color:var(--br-burg)"></i>
+            {% elif production.status == 'etap3' %}<i class="bi bi-3-circle-fill" style="font-size:2.5rem; color:var(--br-burg)"></i>
+            {% elif production.status == 'zwolniona' %}<i class="bi bi-check-circle-fill text-success" style="font-size:2.5rem"></i>
+            {% endif %}
+          </div>
+          <div class="fw-semibold fs-5">{{ production.get_status_display }}</div>
+          {% if production.status == 'zwolniona' and checklist_after.acceptance_date %}
+          <div class="text-muted small mt-1">Zwolniono {{ checklist_after.acceptance_date|date:"d.m.Y" }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Prawa kolumna: 3 etapy równej wysokości -->
+  <div class="col-md-8 d-flex flex-column" style="gap: 1rem;">
+
+    <!-- Etap I -->
+    <div class="card" style="flex:1">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-clipboard-check me-2"></i>Etap I – Checklista przed produkcją</span>
+        {% if checklist_before %}
+          {% if checklist_before.completed_at %}<span class="badge bg-success">Ukończony {{ checklist_before.completed_at|date:"d.m.Y" }}</span>
+          {% else %}<span class="badge bg-warning text-dark">W trakcie</span>{% endif %}
+        {% else %}<span class="badge bg-secondary">Nie rozpoczęty</span>{% endif %}
+      </div>
+      <div class="card-body d-flex flex-column justify-content-between">
+        <div>
+          {% if checklist_before %}
+            <div class="row g-3 mb-3">
+              <div class="col-sm-6">
+                <div class="border rounded p-2 text-center">
+                  <div class="text-muted small">Planowana wydajność</div>
+                  <div class="fw-semibold">{{ checklist_before.planned_yield_kg|default:"–" }} <span class="text-muted small">kg/h</span></div>
+                  <div class="fw-semibold">{{ checklist_before.planned_yield_takty|default:"–" }} <span class="text-muted small">taktów</span></div>
+                </div>
+              </div>
+              <div class="col-sm-6">
+                <div class="border rounded p-2 text-center">
+                  <div class="text-muted small">Dodatkowe próbki</div>
+                  <div class="fw-semibold">
+                    {% if checklist_before.additional_samples_status == 'tak' %}
+                      <span class="text-warning">TAK</span> – {{ checklist_before.additional_samples_count|default:"?" }} szt.
+                    {% elif checklist_before.additional_samples_status == 'nie' %}
+                      <span class="text-success">NIE</span>
+                    {% else %}–{% endif %}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <ul class="list-unstyled small mb-2">
+              <li><i class="bi bi-check-circle-fill text-success me-1"></i>Formularz analizy: <strong>{{ checklist_before.analysis_form_version|default:"–" }}</strong></li>
+              <li><i class="bi bi-check-circle-fill text-success me-1"></i>BOM: {% if checklist_before.bom_set_status == 'tak' %}<span class="text-success">założony</span>{% else %}<span class="text-muted">{{ checklist_before.bom_set_status|default:"–" }}</span>{% endif %}</li>
+              <li><i class="bi bi-check-circle-fill text-success me-1"></i>Layout opakowania: {% if checklist_before.packaging_layout_status == 'tak' %}<span class="text-success">OK</span>{% else %}<span class="text-muted">{{ checklist_before.packaging_layout_status|default:"–" }}</span>{% endif %}</li>
+            </ul>
+          {% else %}
+            <p class="text-muted small mb-3">Checklista nie została jeszcze wypełniona. Przed produkcją należy zweryfikować gotowość wszystkich elementów: zlecenie, BOM, layout, próbki, maszyna.</p>
+          {% endif %}
+        </div>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <a href="{% url 'checklist_before' production.pk %}" class="btn btn-primary btn-sm">
+            <i class="bi bi-pencil-square me-1"></i>
+            {% if checklist_before %}Edytuj checklistę{% else %}Wypełnij checklistę{% endif %}
+          </a>
+          {% if checklist_before %}
+          <a href="{% url 'pdf_etap1' production.pk %}" class="btn btn-outline-secondary btn-sm" target="_blank">
+            <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+          </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Etap II -->
+    <div class="card" style="flex:1">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-clipboard2-pulse me-2"></i>Etap II – Checklista po produkcji</span>
+        {% if checklist_after %}
+          {% if checklist_after.completed_at %}<span class="badge bg-success">Ukończony {{ checklist_after.completed_at|date:"d.m.Y" }}</span>
+          {% else %}<span class="badge bg-warning text-dark">W trakcie</span>{% endif %}
+        {% else %}<span class="badge bg-secondary">Nie rozpoczęty</span>{% endif %}
+      </div>
+      <div class="card-body d-flex flex-column justify-content-between">
+        <div>
+          {% if checklist_after %}
+            <div class="row g-2 small mb-2">
+              <div class="col-md-4">
+                <span class="text-muted d-block">Data produkcji:</span>
+                {{ checklist_after.production_date|date:"d.m.Y"|default:"–" }}
+              </div>
+              <div class="col-md-4">
+                <span class="text-muted d-block">Wydajność uzyskana:</span>
+                {{ checklist_after.yield_kg|default:"–" }} kg/h &nbsp; {{ checklist_after.yield_takty|default:"–" }} taktów
+              </div>
+              <div class="col-md-4">
+                <span class="text-muted d-block">Akceptacja SD:</span>
+                {% if checklist_after.final_acceptance is None %}<span class="text-muted">–</span>
+                {% elif checklist_after.final_acceptance %}<span class="text-success fw-bold">TAK</span> {{ checklist_after.acceptance_date|default:"" }}
+                {% else %}<span class="text-danger fw-bold">NIE</span>{% endif %}
+              </div>
+            </div>
+          {% endif %}
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+          <a href="{% url 'checklist_after_sensory' production.pk %}" class="btn btn-primary btn-sm">
+            <i class="bi bi-eyedropper me-1"></i>Sensoryczne
+          </a>
+          <a href="{% url 'checklist_after_packaging' production.pk %}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-box me-1"></i>Pakowanie
+          </a>
+          {% if checklist_after %}
+          <a href="{% url 'pdf_etap2' production.pk %}" class="btn btn-outline-secondary btn-sm" target="_blank">
+            <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+          </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Etap III -->
+    <div class="card" style="flex:1">
+      <div class="card-header"><i class="bi bi-patch-check me-2"></i>Etap III – Zwolnienie do sprzedaży</div>
+      <div class="card-body d-flex flex-column justify-content-between">
+        <div>
+          {% if production.status == 'zwolniona' %}
+            <div class="alert alert-success py-2 small mb-2">
+              <i class="bi bi-check-circle-fill me-2"></i>Produkcja zwolniona do sprzedaży.
+            </div>
+            {% if checklist_after.final_acceptance %}
+            <div class="small text-muted mb-2">
+              Akceptacja SD: <strong class="text-success">TAK</strong>
+              {% if checklist_after.acceptance_date %} · {{ checklist_after.acceptance_date|date:"d.m.Y" }}{% endif %}
+            </div>
+            {% endif %}
+            <a href="{% url 'pdf_etap3' production.pk %}" class="btn btn-outline-secondary btn-sm" target="_blank">
+              <i class="bi bi-file-earmark-pdf me-1"></i>Pobierz PDF Etap III
+            </a>
+          {% elif checklist_after and checklist_after.completed_at %}
+            <p class="text-muted small mb-3">Etap II zatwierdzony. Wypełnij akceptację SD i zwolnij produkcję.</p>
+            <div class="d-flex gap-2 flex-wrap">
+              <a href="{% url 'release_production' production.pk %}" class="btn btn-success btn-sm">
+                <i class="bi bi-patch-check me-1"></i>Akceptacja SD &amp; Zwolnienie
+              </a>
+              <a href="{% url 'pdf_etap3' production.pk %}" class="btn btn-outline-secondary btn-sm" target="_blank">
+                <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+              </a>
+            </div>
+          {% else %}
+            <div class="alert alert-secondary py-2 small mb-0">
+              <i class="bi bi-lock me-1"></i>Dostępne po zatwierdzeniu Etapu II.
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

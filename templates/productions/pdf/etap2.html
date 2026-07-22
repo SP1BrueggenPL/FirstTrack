@@ -1,0 +1,189 @@
+{% load i18n %}<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>CD-00002055 Checklista Pierwsza Produkcja</title>
+<style>
+  :root{--brand-blue:#7a1f2b;--brand-red:#e2231a;--border:#000;--light-bg:#f5e9ea;}
+  *{box-sizing:border-box;}
+  @page{size:A4 landscape;margin:7mm;}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:9px;color:#111;margin:0;padding:0;}
+  .header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid var(--brand-blue);padding-bottom:3px;margin-bottom:3px;}
+  .header .doc-id{color:var(--brand-blue);font-weight:bold;font-size:13px;}
+  .header .doc-title{font-size:11px;font-weight:600;color:#333;}
+  .logo{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:bold;font-size:20px;color:var(--brand-red);letter-spacing:1px;}
+  .subheader-bar{display:flex;border:1px solid var(--border);margin-bottom:5px;}
+  .subheader-bar div{flex:1;border-right:1px solid var(--border);padding:2px 5px;}
+  .subheader-bar div:last-child{border-right:none;}
+  .subheader-bar .label{background:var(--light-bg);flex:0 0 90px;font-weight:bold;}
+  h2.section-title{font-size:10px;text-decoration:underline;margin:4px 0 4px 0;color:var(--brand-blue);}
+  table.info-grid{width:100%;border-collapse:collapse;margin-bottom:5px;}
+  table.info-grid td{border:1px solid var(--border);padding:2px 4px;vertical-align:middle;font-size:9px;}
+  table.info-grid td.label{background:var(--light-bg);font-weight:bold;white-space:nowrap;width:80px;}
+  table.checklist{width:100%;border-collapse:collapse;margin-bottom:5px;}
+  table.checklist th,table.checklist td{border:1px solid var(--border);padding:2px 4px;text-align:left;vertical-align:middle;font-size:9px;}
+  table.checklist th{background:var(--brand-blue);color:#fff;text-align:center;}
+  table.checklist td.item{width:30%;}
+  table.checklist td.check{width:5%;text-align:center;font-size:11px;}
+  table.checklist td.uwagi{width:22%;}
+  table.checklist td.korekta{width:10%;}
+  table.checklist td.kto{width:8%;}
+  table.checklist td.kiedy{width:8%;}
+  .chk{color:#1a7a1a;font-weight:bold;}
+  .unchk{color:#cc0000;font-weight:bold;}
+  .nd-mark{color:#888;}
+  .footer{display:flex;border-top:2px solid var(--brand-blue);margin-top:6px;padding-top:3px;font-size:8px;}
+  .footer div{flex:1;}
+  .footer .label{color:var(--brand-blue);font-weight:bold;margin-right:3px;}
+  .page-num{text-align:right;}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="doc-id">CD-00002055</div>
+    <div class="doc-title">Checklista Pierwsza Produkcja</div>
+  </div>
+  <div class="logo">Brüggen</div>
+</div>
+
+<div class="subheader-bar">
+  <div class="label">Formularz</div>
+  <div>{{ production.sap_zlecenie|default:"" }}</div>
+  <div>{{ production.product_name|default:"" }}</div>
+  <div></div>
+</div>
+
+<h2 class="section-title">Checklista po Pierwszej Produkcji</h2>
+
+<table class="info-grid">
+  <tr>
+    <td class="label">Linia prod.:</td><td>{% if ca %}{{ ca.production_line|default:"" }}{% endif %}</td>
+    <td class="label">Linia pakuj.:</td><td>{% if ca %}{{ ca.packaging_line|default:"" }}{% endif %}</td>
+    <td class="label">Data produkcji:</td><td colspan="3">{% if ca %}{{ ca.production_date|date:"d.m.Y"|default:"" }}{% endif %}</td>
+  </tr>
+  <tr>
+    <td class="label">R&amp;D:</td><td>{% if ca and ca.person_rd %}{{ ca.person_rd }}{% else %}{{ production.person_rd.get_full_name|default:"" }}{% endif %}</td>
+    <td class="label">SC:</td><td>{% if ca and ca.person_sc %}{{ ca.person_sc }}{% else %}{{ production.person_sc.get_full_name|default:"" }}{% endif %}</td>
+    <td class="label">QL:</td><td>{% if ca and ca.person_ql %}{{ ca.person_ql }}{% else %}{{ production.person_ql.get_full_name|default:"" }}{% endif %}</td>
+    <td class="label">QA:</td><td>{% if ca and ca.person_qa %}{{ ca.person_qa }}{% else %}{{ production.person_qa.get_full_name|default:"" }}{% endif %}</td>
+  </tr>
+  <tr>
+    <td class="label">SD:</td><td>{% if ca and ca.person_sd %}{{ ca.person_sd }}{% else %}{{ production.person_sd.get_full_name|default:"" }}{% endif %}</td>
+    <td class="label">SDP:</td><td>{% if ca and ca.person_sdp %}{{ ca.person_sdp }}{% else %}{{ production.person_sdp.get_full_name|default:"" }}{% endif %}</td>
+    <td class="label">PP:</td><td>{% if ca and ca.person_pp %}{{ ca.person_pp }}{% else %}{{ production.person_pp.get_full_name|default:"" }}{% endif %}</td>
+    <td class="label">CE:</td><td>{% if ca and ca.person_ce %}{{ ca.person_ce }}{% else %}{{ production.person_ce.get_full_name|default:"" }}{% endif %}</td>
+  </tr>
+  <tr>
+    <td class="label">Ocena próbki wzorcowej (pobranie):</td>
+    <td colspan="7">
+      <label style="margin-right:14px;">{% if ca and ca.sample_start %}<span class="chk">✓</span>{% endif %} Początek</label>
+      <label style="margin-right:14px;">{% if ca and ca.sample_middle %}<span class="chk">✓</span>{% endif %} Środek</label>
+      <label>{% if ca and ca.sample_end %}<span class="chk">✓</span>{% endif %} Koniec</label>
+    </td>
+  </tr>
+</table>
+
+<table class="checklist">
+  <tr>
+    <th>Parametry sensoryczne produktu</th>
+    <th style="width:5%">Tak</th><th style="width:5%">Nie</th><th style="width:6%">Nie dotyczy</th>
+    <th>Uwagi</th><th style="width:10%">Korekta</th><th style="width:8%">Kto?</th><th style="width:8%">Kiedy?</th>
+  </tr>
+  {% for s in sensory %}
+  <tr>
+    <td class="item">{{ s.get_param_display }}</td>
+    <td class="check">{% if s.status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if s.status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if s.status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi">{{ s.uwagi|default:"" }}</td>
+    <td class="korekta">{{ s.korekta|default:"" }}</td>
+    <td class="kto">{{ s.kto|default:"" }}</td>
+    <td class="kiedy">{{ s.kiedy|default:"" }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="8" style="height:14px;"></td></tr>
+  {% endfor %}
+</table>
+
+<table class="checklist">
+  <tr>
+    <th>Opakowanie</th>
+    <th style="width:5%">Tak</th><th style="width:5%">Nie</th><th style="width:6%">Nie dotyczy</th>
+    <th>Uwagi</th><th style="width:10%">Korekta</th><th style="width:8%">Kto?</th><th style="width:8%">Kiedy?</th>
+  </tr>
+  {% for p in packaging %}
+  <tr>
+    <td class="item">{{ p.get_item_display }}</td>
+    <td class="check">{% if p.status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
+    <td class="check">{% if p.status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
+    <td class="check">{% if p.status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
+    <td class="uwagi">{{ p.uwagi|default:"" }}</td>
+    <td class="korekta">{{ p.korekta|default:"" }}</td>
+    <td class="kto">{{ p.kto|default:"" }}</td>
+    <td class="kiedy">{{ p.kiedy|default:"" }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="8" style="height:14px;"></td></tr>
+  {% endfor %}
+</table>
+
+<table class="info-grid">
+  <tr>
+    <td class="label">Porównanie z próbką referencyjną</td>
+    <td colspan="5">
+      <label style="margin-right:14px;">{% if ca and ca.comparison_benchmark %}<span class="chk">✓</span>{% endif %} Benchmark</label>
+      <label style="margin-right:14px;">{% if ca and ca.comparison_lab %}<span class="chk">✓</span>{% endif %} Próbka laboratoryjna</label>
+      <label>{% if ca and ca.comparison_reference %}<span class="chk">✓</span>{% endif %} Próbka wzorcowa</label>
+    </td>
+  </tr>
+  <tr>
+    <td class="label">Uzyskana wydajność</td>
+    <td>kg/h: {% if ca %}{{ ca.yield_kg|default:"" }}{% endif %}</td>
+    <td colspan="4">Takty: {% if ca %}{{ ca.yield_takty|default:"" }}{% endif %}</td>
+  </tr>
+  <tr>
+    <td class="label">Uwagi:</td>
+    <td colspan="5">{% if ca %}{{ ca.uwagi|default:"" }}{% endif %}</td>
+  </tr>
+  <tr>
+    <td class="label">Ostateczna akceptacja SD, Zwolnienie do sprzedaży</td>
+    <td><label>{% if ca and ca.final_acceptance %}<span class="chk">✓</span>{% endif %} tak</label></td>
+    <td><label>{% if ca and ca.final_acceptance == False %}<span class="unchk">✗</span>{% endif %} nie</label></td>
+    <td class="label">data:</td>
+    <td>{% if ca %}{{ ca.acceptance_date|date:"d.m.Y"|default:"" }}{% endif %}</td>
+    <td class="label">Podpis:</td>
+    <td>{% if ca and ca.acceptance_signature %}<img src="{{ ca.acceptance_signature }}" style="max-height:28px;max-width:110px;">{% endif %}</td>
+  </tr>
+</table>
+
+{% if ca %}{% with sig_rd=ca.sig_rd sig_sc=ca.sig_sc sig_ql=ca.sig_ql sig_qa=ca.sig_qa sig_sd=ca.sig_sd sig_sdp=ca.sig_sdp sig_pp=ca.sig_pp sig_ce=ca.sig_ce %}
+{% if sig_rd or sig_sc or sig_ql or sig_qa or sig_sd or sig_sdp or sig_pp or sig_ce %}
+<table class="info-grid" style="margin-bottom:5px;">
+  <tr>
+    <td colspan="8" style="background:var(--light-bg);font-weight:bold;padding:2px 4px;">Podpisy zespołu:</td>
+  </tr>
+  <tr style="height:48px;vertical-align:bottom;">
+    {% if sig_rd %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_rd }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">R&amp;D – {{ ca.person_rd }}</div></td>{% endif %}
+    {% if sig_sc %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_sc }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">SC – {{ ca.person_sc }}</div></td>{% endif %}
+    {% if sig_ql %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_ql }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">QL – {{ ca.person_ql }}</div></td>{% endif %}
+    {% if sig_qa %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_qa }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">QA – {{ ca.person_qa }}</div></td>{% endif %}
+    {% if sig_sd %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_sd }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">SD – {{ ca.person_sd }}</div></td>{% endif %}
+    {% if sig_sdp %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_sdp }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">SDP – {{ ca.person_sdp }}</div></td>{% endif %}
+    {% if sig_pp %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_pp }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">PP – {{ ca.person_pp }}</div></td>{% endif %}
+    {% if sig_ce %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_ce }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">CE – {{ ca.person_ce }}</div></td>{% endif %}
+  </tr>
+</table>
+{% endif %}{% endwith %}{% endif %}
+
+<div class="footer">
+  <div><span class="label">Version:</span> 1</div>
+  <div><span class="label">Valid until:</span> 08.01.2024</div>
+  <div><span class="label">Reviewer:</span> System Transfer</div>
+  <div><span class="label">Reason for change:</span> System Transfer</div>
+  <div class="page-num">02 | 02</div>
+</div>
+
+</body>
+</html>

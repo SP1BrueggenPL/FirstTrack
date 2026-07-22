@@ -1,0 +1,109 @@
+{% extends "productions/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0"><i class="bi bi-person-plus me-2"></i>{{ title }}</h4>
+  <a href="{% url 'user_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Powrót
+  </a>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-md-7">
+    <div class="card">
+      <div class="card-header">
+        <i class="bi bi-person-badge me-2"></i>
+        {% if is_create %}Dane nowego konta{% else %}Edycja: {{ edit_user.get_full_name }}{% endif %}
+      </div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Imię *</label>
+              {{ form.first_name }}
+              {% if form.first_name.errors %}<div class="text-danger small">{{ form.first_name.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Nazwisko *</label>
+              {{ form.last_name }}
+              {% if form.last_name.errors %}<div class="text-danger small">{{ form.last_name.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Email służbowy *</label>
+              {{ form.email }}
+              {% if form.email.errors %}<div class="text-danger small">{{ form.email.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Telefon</label>
+              {{ form.phone }}
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Dział *</label>
+              {{ form.department }}
+              {% if form.department.errors %}<div class="text-danger small">{{ form.department.errors }}</div>{% endif %}
+            </div>
+
+            {% if not is_create %}
+            <div class="col-md-4 d-flex align-items-end pb-1 gap-3">
+              <div class="form-check">
+                {{ form.is_active }}
+                <label class="form-check-label fw-semibold" for="{{ form.is_active.id_for_label }}">
+                  Konto aktywne
+                </label>
+              </div>
+              <div class="form-check">
+                {{ form.is_staff }}
+                <label class="form-check-label fw-semibold" for="{{ form.is_staff.id_for_label }}">
+                  Admin
+                </label>
+              </div>
+            </div>
+            {% endif %}
+
+            {% if is_create %}
+            <div class="col-12"><hr class="my-1"></div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Hasło *</label>
+              {{ form.password1 }}
+              {% if form.password1.errors %}<div class="text-danger small">{{ form.password1.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Powtórz hasło *</label>
+              {{ form.password2 }}
+              {% if form.password2.errors %}<div class="text-danger small">{{ form.password2.errors }}</div>{% endif %}
+            </div>
+            {% endif %}
+          </div>
+
+          {% if form.non_field_errors %}
+          <div class="alert alert-danger mt-3 py-2 small">{{ form.non_field_errors }}</div>
+          {% endif %}
+
+          <div class="d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-floppy me-1"></i>
+              {% if is_create %}Utwórz konto{% else %}Zapisz zmiany{% endif %}
+            </button>
+            {% if not is_create %}
+            <a href="{% url 'user_password' edit_user.pk %}" class="btn btn-outline-warning">
+              <i class="bi bi-key me-1"></i>Zmień hasło
+            </a>
+            {% endif %}
+            <a href="{% url 'user_list' %}" class="btn btn-outline-secondary">Anuluj</a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    {% if is_create %}
+    <div class="alert alert-info mt-3 small">
+      <i class="bi bi-info-circle me-2"></i>
+      Login zostanie ustawiony automatycznie na podstawie adresu email (część przed @).
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

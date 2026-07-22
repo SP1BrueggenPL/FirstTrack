@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}FirstTrack{% endblock %} – Brüggen</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    /* ═══════════════════════════════════════════════════════
+       BRÜGGEN OFFICIAL BRAND COLORS  (source: PPT Master 5-2024)
+       ─────────────────────────────────────────────────────
+       Primary dark  #661C31   Burgund (logo bg, headers)
+       Primary red   #FF4143   Brand red (accents, CTA)
+       Gold          #E2BC54   Secondary accent
+       Charcoal      #514B51   Dark neutral / text
+       Slate         #7885A2   Secondary neutral
+       Cream         #FDFDF1   Light background
+       ─────────────────────────────────────────────────────
+       Fonts: Franklin Gothic (headings) · Georgia (body)
+    ═══════════════════════════════════════════════════════ */
+    :root {
+      --br-burg:       #661C31;
+      --br-burg-dk:    #4d1525;
+      --br-red:        #FF4143;
+      --br-red-dk:     #e03335;
+      --br-gold:       #E2BC54;
+      --br-gold-lt:    #f5e9be;
+      --br-charcoal:   #514B51;
+      --br-slate:      #7885A2;
+      --br-cream:      #FDFDF1;
+      --br-page:       #F7F4F5;
+      --br-border:     #e0d0d5;
+      --br-card-bg:    #FFFFFF;
+    }
+
+    /* ── Base ───────────────────────────────────────────── */
+    body {
+      background: var(--br-page);
+      font-family: 'Georgia', 'Times New Roman', serif;
+      font-size: 0.9rem;
+      color: var(--br-charcoal);
+    }
+    h1, h2, h3, h4, h5, h6,
+    .navbar-brand, .card-header,
+    .fw-bold, .fw-semibold, th,
+    .btn, label.form-label, .nav-label,
+    .step, .stat-lbl, .badge {
+      font-family: 'Franklin Gothic Medium', 'Franklin Gothic', 'Arial Narrow', Arial, sans-serif;
+    }
+
+    /* ── Navbar ─────────────────────────────────────────── */
+    .navbar-brueggen {
+      background: var(--br-burg);
+      border-bottom: 3px solid var(--br-red);
+      min-height: 56px;
+      padding: 0 1.25rem;
+    }
+    .navbar-brueggen .navbar-brand {
+      color: #fff !important;
+      font-weight: 900;
+      font-size: 1.3rem;
+      letter-spacing: 1px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 0;
+      text-transform: uppercase;
+    }
+    .brand-logo-circle {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--br-red);
+      border: 2px solid rgba(255,255,255,.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 900;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .brand-text-wrap { display: flex; flex-direction: column; line-height: 1.15; }
+    .brand-sub {
+      font-size: 0.65rem;
+      font-weight: 400;
+      color: rgba(255,255,255,.55);
+      letter-spacing: .3px;
+      text-transform: none;
+    }
+
+    /* ── Sidebar ────────────────────────────────────────── */
+    .sidebar {
+      min-height: calc(100vh - 59px);
+      background: var(--br-card-bg);
+      border-right: 1px solid var(--br-border);
+      padding-top: .75rem;
+      position: relative;
+    }
+    .nav-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.4px;
+      color: var(--br-slate);
+      padding: 8px 18px 3px;
+      display: block;
+    }
+    .sidebar .nav-link {
+      color: var(--br-charcoal);
+      border-radius: 0 6px 6px 0;
+      margin: 1px 10px 1px 0;
+      padding: 7px 14px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 0.875rem;
+      border-left: 3px solid transparent;
+      transition: all .12s;
+    }
+    .sidebar .nav-link i { color: var(--br-slate); font-size: 1rem; }
+    .sidebar .nav-link:hover {
+      background: #fdf5f6;
+      color: var(--br-burg);
+      border-left-color: var(--br-gold);
+    }
+    .sidebar .nav-link:hover i { color: var(--br-burg); }
+    .sidebar .nav-link.active {
+      background: #fdf0f1;
+      color: var(--br-burg);
+      font-weight: 600;
+      border-left-color: var(--br-red);
+    }
+    .sidebar .nav-link.active i { color: var(--br-red); }
+    .sidebar hr { margin: 8px 16px; border-color: var(--br-border); }
+
+    /* ── Sidebar brand footer ───────────────────────────── */
+    .sidebar-brand-footer {
+      position: absolute;
+      bottom: 20px;
+      left: 12px;
+      right: 12px;
+      border: 2px solid var(--br-burg);
+      border-radius: 8px;
+      padding: 10px 8px 8px;
+      text-align: center;
+      background: #fff;
+    }
+    .sidebar-brand-footer .sb-name {
+      font-family: 'Franklin Gothic Medium', 'Franklin Gothic', Arial, sans-serif;
+      font-size: 1.15rem;
+      font-weight: 900;
+      color: var(--br-red);
+      letter-spacing: 1px;
+    }
+    .sidebar-brand-footer .sb-bar {
+      height: 3px;
+      background: linear-gradient(90deg, var(--br-burg), var(--br-red), var(--br-gold));
+      border-radius: 2px;
+      margin: 4px 0;
+    }
+    .sidebar-brand-footer .sb-sub {
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: var(--br-slate);
+    }
+
+    /* ── Cards ──────────────────────────────────────────── */
+    .card {
+      border: 1px solid var(--br-border);
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(102,28,49,.07);
+      background: var(--br-card-bg);
+    }
+    .card-header {
+      background: var(--br-burg);
+      color: #fff;
+      border-radius: 7px 7px 0 0 !important;
+      font-weight: 700;
+      font-size: 0.875rem;
+      padding: 10px 16px;
+      border-bottom: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      letter-spacing: .3px;
+    }
+    .card-header .badge {
+      background: rgba(255,255,255,.18) !important;
+      color: #fff;
+      font-weight: 500;
+    }
+
+    /* ── Buttons ────────────────────────────────────────── */
+    .btn-primary {
+      background: var(--br-burg);
+      border-color: var(--br-burg);
+      font-weight: 600;
+    }
+    .btn-primary:hover, .btn-primary:focus {
+      background: var(--br-burg-dk);
+      border-color: var(--br-burg-dk);
+    }
+    .btn-success {
+      background: #1a7a4a;
+      border-color: #1a7a4a;
+    }
+    .btn-outline-primary {
+      color: var(--br-burg);
+      border-color: var(--br-burg);
+    }
+    .btn-outline-primary:hover {
+      background: var(--br-burg);
+      border-color: var(--br-burg);
+      color: #fff;
+    }
+    .btn-outline-secondary {
+      color: var(--br-charcoal);
+      border-color: var(--br-border);
+    }
+
+    /* ── Tables ─────────────────────────────────────────── */
+    .table th {
+      font-weight: 700;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--br-charcoal);
+      background: #fdf5f6;
+      border-bottom: 2px solid var(--br-border);
+    }
+    .table-hover > tbody > tr:hover > td { background: #fdf5f6; }
+
+    /* ── Status badges ──────────────────────────────────── */
+    .badge-nowa      { background: var(--br-slate)    !important; }
+    .badge-etap1     { background: #2971b8            !important; }
+    .badge-etap2     { background: var(--br-gold)     !important; color: #3a2a00 !important; }
+    .badge-etap3     { background: var(--br-charcoal) !important; }
+    .badge-zwolniona { background: #1a7a4a            !important; }
+
+    /* ── Stat cards ─────────────────────────────────────── */
+    .stat-card {
+      background: var(--br-card-bg);
+      border: 1px solid var(--br-border);
+      border-radius: 8px;
+      padding: 14px 16px 12px;
+      box-shadow: 0 1px 3px rgba(102,28,49,.06);
+    }
+    .stat-card .stat-val {
+      font-size: 1.9rem;
+      font-weight: 900;
+      line-height: 1;
+      color: var(--br-burg);
+    }
+    .stat-card .stat-val.etap1  { color: #2971b8; }
+    .stat-card .stat-val.etap2  { color: #b8860b; }
+    .stat-card .stat-val.etap3  { color: var(--br-charcoal); }
+    .stat-card .stat-val.green  { color: #1a7a4a; }
+    .stat-card .stat-lbl {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .7px;
+      color: var(--br-slate);
+      margin-top: 4px;
+    }
+    .stat-card .stat-bar {
+      height: 3px;
+      background: var(--br-gold);
+      border-radius: 2px;
+      margin-top: 8px;
+    }
+
+    /* ── Step indicator ─────────────────────────────────── */
+    .step-indicator {
+      display: flex;
+      gap: 0;
+      margin-bottom: 1.5rem;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--br-border);
+      box-shadow: 0 1px 3px rgba(102,28,49,.06);
+    }
+    .step {
+      flex: 1;
+      text-align: center;
+      padding: 9px 4px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      background: #f0eaec;
+      color: #9a7a82;
+      border-right: 1px solid var(--br-border);
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+    .step:last-child { border-right: none; }
+    .step.done {
+      background: #e8f5ee;
+      color: #1a7a4a;
+    }
+    .step.active {
+      background: var(--br-burg);
+      color: #fff;
+    }
+
+    /* ── Status Radio ───────────────────────────────────── */
+    .status-radio { display: flex; gap: 3px; flex-wrap: nowrap; }
+    .status-radio input[type=radio] { display: none; }
+    .status-radio label {
+      cursor: pointer;
+      padding: 3px 9px;
+      border-radius: 4px;
+      border: 1px solid var(--br-border);
+      font-family: 'Franklin Gothic Medium', Arial, sans-serif;
+      font-size: 0.75rem;
+      font-weight: 600;
+      white-space: nowrap;
+      color: var(--br-slate);
+      transition: all .1s;
+      user-select: none;
+    }
+    .status-radio label:hover { border-color: var(--br-slate); color: var(--br-charcoal); }
+    .status-radio input[type=radio]:checked + label.tak {
+      background: #d4edda; border-color: #28a745; color: #155724;
+    }
+    .status-radio input[type=radio]:checked + label.nie {
+      background: #fde8e8; border-color: var(--br-red); color: var(--br-burg);
+    }
+    .status-radio input[type=radio]:checked + label.nd {
+      background: #e8e7e8; border-color: var(--br-slate); color: var(--br-charcoal);
+    }
+
+    /* ── Checklist table ────────────────────────────────── */
+    .checklist-table td, .checklist-table th { vertical-align: middle; }
+    .checklist-table td:first-child { font-size: 0.84rem; min-width: 200px; }
+    .checklist-table tbody tr:nth-child(even) td { background: #fdfaf9; }
+
+    /* ── Form controls ──────────────────────────────────── */
+    .form-control:focus, .form-select:focus {
+      border-color: var(--br-burg);
+      box-shadow: 0 0 0 .2rem rgba(102,28,49,.15);
+    }
+    label.form-label {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--br-charcoal);
+      margin-bottom: 3px;
+    }
+
+    /* ── Alerts ─────────────────────────────────────────── */
+    .alert-success { background: #e8f5ee; border-color: #b7dfca; color: #1a7a4a; }
+    .alert-info    { background: #fdf5f6; border-color: var(--br-border); color: var(--br-burg); }
+    .alert-warning { background: var(--br-gold-lt); border-color: var(--br-gold); color: #6b4c00; }
+    .alert-error, .alert-danger { background: #fde8e8; border-color: #f5b8b9; color: var(--br-burg); }
+
+    /* ── Gold accent bar ────────────────────────────────── */
+    .gold-accent { height: 3px; background: var(--br-gold); border-radius: 2px; }
+
+    /* ── Page title ─────────────────────────────────────── */
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 1.25rem;
+      padding-bottom: .75rem;
+      border-bottom: 2px solid var(--br-border);
+    }
+    .page-header h4 {
+      color: var(--br-burg);
+      font-weight: 900;
+      font-size: 1.25rem;
+      margin: 0;
+    }
+
+    /* ── Scrollbar ──────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: var(--br-page); }
+    ::-webkit-scrollbar-thumb { background: var(--br-border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--br-slate); }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-brueggen">
+  <div class="container-fluid px-0">
+    <a class="navbar-brand" href="{% url 'dashboard' %}">
+      <span class="brand-logo-circle">FT</span>
+      <span class="brand-text-wrap">
+        FirstTrack
+        <span class="brand-sub">H. &amp; J. Brüggen KG &nbsp;·&nbsp; Pierwsza Produkcja</span>
+      </span>
+    </a>
+  </div>
+</nav>
+
+<div class="container-fluid g-0">
+  <div class="row g-0">
+
+    <!-- Sidebar -->
+    <nav class="col-md-2 sidebar d-none d-md-block">
+      <span class="nav-label mt-2">Nawigacja</span>
+      <ul class="nav flex-column mb-2">
+        <li>
+          <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"
+             href="{% url 'dashboard' %}">
+            <i class="bi bi-house-door"></i> Dashboard
+          </a>
+        </li>
+        <li>
+          <a class="nav-link {% if request.resolver_match.url_name == 'production_new' %}active{% endif %}"
+             href="{% url 'production_new' %}">
+            <i class="bi bi-plus-circle"></i> Nowa produkcja
+          </a>
+        </li>
+        <li>
+          <a class="nav-link {% if request.resolver_match.url_name == 'import_sap' %}active{% endif %}"
+             href="{% url 'import_sap' %}">
+            <i class="bi bi-camera"></i> Import z SAP
+          </a>
+        </li>
+      </ul>
+
+      <hr>
+      <span class="nav-label">Zarządzanie</span>
+      <ul class="nav flex-column">
+        <li>
+          <a class="nav-link {% if request.resolver_match.url_name in 'user_list,user_create,user_edit,user_password' %}active{% endif %}"
+             href="{% url 'user_list' %}">
+            <i class="bi bi-people"></i> Użytkownicy
+          </a>
+        </li>
+        <li>
+          <a class="nav-link" href="/admin/" target="_blank">
+            <i class="bi bi-gear"></i> Admin panel
+          </a>
+        </li>
+      </ul>
+
+      <hr>
+      <div class="px-2 pb-2">
+        <div class="small text-muted mb-2">
+          <i class="bi bi-person-circle me-1"></i>
+          {{ request.user.get_full_name|default:request.user.username }}
+          {% if request.user.is_staff %}<span class="badge ms-1" style="background:var(--br-burg);font-size:.6rem">Admin</span>{% endif %}
+        </div>
+        <form method="post" action="{% url 'logout' %}">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-sm btn-outline-secondary w-100">
+            <i class="bi bi-box-arrow-left me-1"></i>Wyloguj
+          </button>
+        </form>
+      </div>
+
+      <div class="sidebar-brand-footer">
+        <div class="sb-name">Brüggen</div>
+        <div class="sb-bar"></div>
+        <div class="sb-sub">H. &amp; J. Brüggen KG</div>
+      </div>
+    </nav>
+
+    <!-- Main -->
+    <main class="col-md-10 ms-sm-auto px-4 py-3" style="min-height: calc(100vh - 59px);">
+      {% for msg in messages %}
+        <div class="alert alert-{{ msg.tags|default:'info' }} alert-dismissible fade show py-2" role="alert">
+          <i class="bi bi-{% if msg.tags == 'success' %}check-circle{% elif msg.tags == 'error' or msg.tags == 'danger' %}exclamation-circle{% else %}info-circle{% endif %} me-2"></i>
+          {{ msg }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+      {% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Logowanie – FirstTrack</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root { --br-burg: #661C31; }
+    body { background: #f4f2f4; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .login-card { width: 100%; max-width: 400px; }
+    .login-header { background: var(--br-burg); color: #fff; border-radius: .5rem .5rem 0 0; padding: 1.5rem; text-align: center; }
+    .login-header h4 { margin: 0; font-weight: 700; letter-spacing: .5px; }
+    .login-header small { opacity: .75; font-size: .8rem; }
+    .btn-login { background: var(--br-burg); border-color: var(--br-burg); color: #fff; }
+    .btn-login:hover { background: #4e1525; border-color: #4e1525; color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="login-header">
+      <i class="bi bi-clipboard2-check fs-2 d-block mb-1"></i>
+      <h4>FirstTrack</h4>
+      <small>H. & J. Brüggen KG – Pierwsza Produkcja</small>
+    </div>
+    <div class="card border-top-0" style="border-radius: 0 0 .5rem .5rem">
+      <div class="card-body p-4">
+        {% if form.errors %}
+        <div class="alert alert-danger py-2 small mb-3">
+          <i class="bi bi-exclamation-triangle me-1"></i>Nieprawidłowy login lub hasło.
+        </div>
+        {% endif %}
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Login</label>
+            <input type="text" name="username" autofocus autocomplete="username"
+                   class="form-control" placeholder="login lub email">
+          </div>
+          <div class="mb-4">
+            <label class="form-label fw-semibold">Hasło</label>
+            <input type="password" name="password" autocomplete="current-password"
+                   class="form-control">
+          </div>
+          <input type="hidden" name="next" value="{{ next }}">
+          <button type="submit" class="btn btn-login w-100">
+            <i class="bi bi-box-arrow-in-right me-1"></i>Zaloguj się
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

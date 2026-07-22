@@ -1,0 +1,164 @@
+{% extends "productions/base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h4><i class="bi bi-house-door me-2"></i>Dashboard</h4>
+  <div class="d-flex gap-2">
+    <a href="{% url 'import_sap' %}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-camera me-1"></i>Import z SAP
+    </a>
+    <a href="{% url 'production_new' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-circle me-1"></i>Nowa produkcja
+    </a>
+  </div>
+</div>
+
+<!-- Statystyki -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="stat-val">{{ counts.total }}</div>
+      <div class="stat-lbl">Wszystkie</div>
+      <div class="stat-bar"></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="stat-val">{{ counts.nowa }}</div>
+      <div class="stat-lbl">Nowe</div>
+      <div class="stat-bar" style="background:var(--br-slate)"></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="stat-val etap1">{{ counts.etap1 }}</div>
+      <div class="stat-lbl">Etap I</div>
+      <div class="stat-bar" style="background:#2971b8"></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="stat-val etap2">{{ counts.etap2 }}</div>
+      <div class="stat-lbl">Etap II</div>
+      <div class="stat-bar" style="background:var(--br-gold)"></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="stat-val etap3">{{ counts.etap3 }}</div>
+      <div class="stat-lbl">Etap III</div>
+      <div class="stat-bar" style="background:var(--br-charcoal)"></div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="stat-val green">{{ counts.zwolniona }}</div>
+      <div class="stat-lbl">Zwolnione</div>
+      <div class="stat-bar" style="background:#1a7a4a"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Filtry -->
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-center">
+      <div class="col-md-4">
+        <input type="text" name="q" class="form-control form-control-sm"
+               placeholder="Szukaj nazwy produktu…" value="{{ search }}">
+      </div>
+      <div class="col-md-3">
+        <select name="status" class="form-select form-select-sm">
+          <option value="">– Wszystkie statusy –</option>
+          {% for val, label in status_choices %}
+            <option value="{{ val }}" {% if status_filter == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-funnel me-1"></i>Filtruj
+        </button>
+        <a href="{% url 'dashboard' %}" class="btn btn-sm btn-link" style="color:var(--br-slate)">Wyczyść</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Tabela -->
+<div class="card">
+  <div class="card-header">
+    <i class="bi bi-table"></i>&nbsp;Pierwsze Produkcje
+    <span class="ms-auto badge">{{ productions|length }}</span>
+  </div>
+  <div class="card-body p-0">
+    {% if productions %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Zlecenie</th>
+            <th>Materiał</th>
+            <th>Produkt</th>
+            <th>Data prod.</th>
+            <th>Typ</th>
+            <th>Layout</th>
+            <th>SD</th>
+            <th>Zmiany</th>
+            <th>Status</th>
+            <th>Mail</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in productions %}
+          <tr>
+            <td class="fw-semibold">{{ p.sap_zlecenie|default:"–" }}</td>
+            <td>{{ p.sap_material|default:"–" }}</td>
+            <td>{{ p.product_name }}</td>
+            <td>{{ p.data_produkcji|default:"–" }}</td>
+            <td>{% if p.typ_produkcji %}<span class="badge bg-info text-dark">{{ p.typ_produkcji }}</span>{% else %}–{% endif %}</td>
+            <td>{{ p.layout|default:"–" }}</td>
+            <td class="text-muted small">{{ p.person_sd.get_full_name|default:"–"|truncatechars:25 }}</td>
+            <td class="text-muted small">{{ p.zmiany|default:"–"|truncatechars:30 }}</td>
+            <td><span class="badge badge-{{ p.status }}">{{ p.get_status_display }}</span></td>
+            <td>
+              {% if p.email_sent %}
+                <i class="bi bi-envelope-check-fill" style="color:#1a7a4a" title="{{ p.email_sent_at }}"></i>
+              {% else %}
+                <i class="bi bi-envelope text-muted"></i>
+              {% endif %}
+            </td>
+            <td>
+              <div class="d-flex gap-1">
+                <a href="{% url 'production_detail' p.pk %}" class="btn btn-sm btn-outline-primary py-0 px-2">
+                  <i class="bi bi-eye"></i>
+                </a>
+                {% if request.user.is_staff %}
+                <form method="post" action="{% url 'production_delete' p.pk %}"
+                      onsubmit="return confirm('Usunąć „{{ p.product_name }}"?')">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center py-5" style="color:var(--br-slate)">
+      <i class="bi bi-inbox display-4 d-block mb-2" style="color:var(--br-border)"></i>
+      Brak produkcji. &nbsp;
+      <a href="{% url 'production_new' %}" style="color:var(--br-burg)">Dodaj pierwszą</a> lub
+      <a href="{% url 'import_sap' %}" style="color:var(--br-burg)">importuj z SAP</a>.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

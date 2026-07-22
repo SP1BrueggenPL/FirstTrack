@@ -1,0 +1,164 @@
+{% extends "productions/base.html" %}
+{% block title %}Etap I – {{ production.product_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>Etap I – Checklista przed produkcją</h4>
+    <small class="text-muted">{{ production.product_name }} &nbsp;|&nbsp; CD-00002055 str. 1</small>
+  </div>
+  <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Powrót
+  </a>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+
+  <!-- Nagłówek -->
+  <div class="card mb-3">
+    <div class="card-header"><i class="bi bi-info-circle me-2"></i>Nagłówek</div>
+    <div class="card-body">
+      <div class="row g-2 text-muted small">
+        <div class="col-md-2"><strong>Zlecenie:</strong> {{ production.sap_zlecenie|default:"–" }}</div>
+        <div class="col-md-2"><strong>Materiał:</strong> {{ production.sap_material|default:"–" }}</div>
+        <div class="col-md-4"><strong>Produkt:</strong> {{ production.product_name }}</div>
+        {% if production.packaging_line %}<div class="col-md-2"><strong>Linia pakuj.:</strong> {{ production.packaging_line }}</div>{% endif %}
+        <div class="w-100"></div>
+        {% if production.person_rd %}<div class="col-auto"><strong>R&amp;D:</strong> {{ production.person_rd.get_full_name }}</div>{% endif %}
+        {% if production.person_sc %}<div class="col-auto"><strong>SC:</strong> {{ production.person_sc.get_full_name }}</div>{% endif %}
+        {% if production.person_ql %}<div class="col-auto"><strong>QL:</strong> {{ production.person_ql.get_full_name }}</div>{% endif %}
+        {% if production.person_qa %}<div class="col-auto"><strong>QA:</strong> {{ production.person_qa.get_full_name }}</div>{% endif %}
+        {% if production.person_sd %}<div class="col-auto"><strong>SD:</strong> {{ production.person_sd.get_full_name }}</div>{% endif %}
+        {% if production.person_sdp %}<div class="col-auto"><strong>SDP:</strong> {{ production.person_sdp.get_full_name }}</div>{% endif %}
+        {% if production.person_pp %}<div class="col-auto"><strong>PP:</strong> {{ production.person_pp.get_full_name }}</div>{% endif %}
+        {% if production.person_ce %}<div class="col-auto"><strong>CE:</strong> {{ production.person_ce.get_full_name }}</div>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Informacje Ogólne -->
+  <div class="card mb-3">
+    <div class="card-header"><i class="bi bi-list-check me-2"></i>Informacje Ogólne</div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table checklist-table mb-0">
+          <thead class="table-light">
+            <tr>
+              <th style="width:30%">Pozycja</th>
+              <th>Tak / Nie / N/D</th>
+              <th>Uwagi</th>
+              <th style="width:10%">Nadzór</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            {% include "productions/_checklist_row.html" with field_status=form.order_updated_status field_uwagi=form.order_updated_uwagi label="Zlecenie produkcyjne zaktualizowane" nadzor="SC" %}
+            {% include "productions/_checklist_row.html" with field_status=form.pwpr_status field_uwagi=form.pwpr_uwagi label='Znak „PWPR"' nadzor="SC" %}
+
+            <!-- Formularz analizy z wersją -->
+            <tr>
+              <td>Czy jest formularz analizy?</td>
+              <td>{% include "productions/_status_radio.html" with field=form.analysis_form_status %}</td>
+              <td>{{ form.analysis_form_version }}</td>
+              <td><span class="badge bg-light text-dark">QA</span></td>
+            </tr>
+
+            {% include "productions/_checklist_row.html" with field_status=form.zero_sample_status field_uwagi=form.zero_sample_uwagi label="Czy jest próbka zerowa?" nadzor="R&D / QL" %}
+            {% include "productions/_checklist_row.html" with field_status=form.production_card_status field_uwagi=form.production_card_uwagi label="Czy jest karta produkcyjna?" nadzor="R&D / QA" %}
+            {% include "productions/_checklist_row.html" with field_status=form.machine_suitable_status field_uwagi=form.machine_suitable_uwagi label="Czy maszyna produkcyjna/pakująca jest przystosowana do wymogów technologicznych?" nadzor="CE / PP" %}
+            {% include "productions/_checklist_row.html" with field_status=form.packaging_layout_status field_uwagi=form.packaging_layout_uwagi label="Layout opakowania" nadzor="SD" %}
+            {% include "productions/_checklist_row.html" with field_status=form.collective_label_status field_uwagi=form.collective_label_uwagi label="Etykieta na karton zbiorczy" nadzor="SD" %}
+            {% include "productions/_checklist_row.html" with field_status=form.date_format_status field_uwagi=form.date_format_uwagi label="Format daty" nadzor="SD" %}
+            {% include "productions/_checklist_row.html" with field_status=form.bom_set_status field_uwagi=form.bom_set_uwagi label="Czy jest założony BOM?" nadzor="QA" %}
+
+            <!-- Wydajność -->
+            <tr>
+              <td>Planowana wydajność</td>
+              <td colspan="2">
+                <div class="d-flex gap-2 align-items-center">
+                  <div>{{ form.planned_yield_kg }}</div>
+                  <small class="text-muted">kg/h</small>
+                  <div>{{ form.planned_yield_takty }}</div>
+                  <small class="text-muted">taktów</small>
+                </div>
+              </td>
+              <td><span class="badge bg-light text-dark">PP / R&amp;D</span></td>
+            </tr>
+
+            <!-- Dodatkowe próbki -->
+            <tr>
+              <td>Wymagane dodatkowe próbki dla klienta?</td>
+              <td>{% include "productions/_status_radio.html" with field=form.additional_samples_status %}</td>
+              <td>
+                <div class="d-flex gap-1 align-items-center">
+                  <small class="text-muted">Ilość:</small>
+                  {{ form.additional_samples_count }}
+                </div>
+              </td>
+              <td><span class="badge bg-light text-dark">SD</span></td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Test pakowania -->
+  <div class="card mb-3">
+    <div class="card-header"><i class="bi bi-box-seam me-2"></i>Test pakowania</div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table checklist-table mb-0">
+          <thead class="table-light">
+            <tr>
+              <th style="width:35%">Nazwa pozycji</th>
+              <th>Tak / Nie / N/D</th>
+              <th>Nadzór</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for i in "123" %}
+            {% with i=forloop.counter %}
+            <tr>
+              <td>
+                {% if i == 1 %}{{ form.test_packaging_1_name }}
+                {% elif i == 2 %}{{ form.test_packaging_2_name }}
+                {% else %}{{ form.test_packaging_3_name }}{% endif %}
+              </td>
+              <td>
+                {% if i == 1 %}{% include "productions/_status_radio.html" with field=form.test_packaging_1_status %}
+                {% elif i == 2 %}{% include "productions/_status_radio.html" with field=form.test_packaging_2_status %}
+                {% else %}{% include "productions/_status_radio.html" with field=form.test_packaging_3_status %}{% endif %}
+              </td>
+              <td>
+                {% if i == 1 %}{{ form.test_packaging_1_nadzor }}
+                {% elif i == 2 %}{{ form.test_packaging_2_nadzor }}
+                {% else %}{{ form.test_packaging_3_nadzor }}{% endif %}
+              </td>
+            </tr>
+            {% endwith %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="submit" name="save" class="btn btn-outline-primary">
+      <i class="bi bi-floppy me-1"></i>Zapisz roboczo
+    </button>
+    <button type="submit" name="complete" class="btn btn-success">
+      <i class="bi bi-check2-circle me-1"></i>Zatwierdź Etap I
+    </button>
+    <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary">Anuluj</a>
+    {% if form.instance.pk %}
+    <a href="{% url 'pdf_etap1' production.pk %}" class="btn btn-outline-dark ms-auto" target="_blank">
+      <i class="bi bi-file-earmark-pdf me-1"></i>Pobierz PDF
+    </a>
+    {% endif %}
+  </div>
+</form>
+{% endblock %}

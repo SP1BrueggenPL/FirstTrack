@@ -1,0 +1,184 @@
+{% extends "productions/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0"><i class="bi bi-plus-circle me-2"></i>{{ title }}</h4>
+  {% if production %}
+  <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Powrót
+  </a>
+  {% else %}
+  <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Powrót
+  </a>
+  {% endif %}
+</div>
+
+<form method="post" enctype="multipart/form-data">
+  {% csrf_token %}
+
+  <!-- Dane SAP -->
+  <div class="card mb-3">
+    <div class="card-header"><i class="bi bi-upc-scan me-2"></i>Dane z SAP</div>
+    <div class="card-body">
+      <div class="row g-2">
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Zlecenie SAP</label>
+          {{ form.sap_zlecenie }}
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Nr materiału SAP</label>
+          {{ form.sap_material }}
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold small">Krótki tekst materiału *</label>
+          {{ form.product_name }}
+          {% if form.product_name.errors %}<div class="text-danger small">{{ form.product_name.errors }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Szczegółowe informacje -->
+  <div class="card mb-3">
+    <div class="card-header"><i class="bi bi-calendar3 me-2"></i>Szczegółowe informacje</div>
+    <div class="card-body">
+      <div class="row g-2">
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Data produkcji</label>
+          {{ form.data_produkcji }}
+        </div>
+        <div class="col-md-2">
+          <label class="form-label fw-semibold small">Typ A/B</label>
+          {{ form.typ_produkcji }}
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Layout</label>
+          {{ form.layout }}
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold small">Zmiany</label>
+          {{ form.zmiany }}
+        </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold small">Komentarz</label>
+          {{ form.komentarz }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Linia i numery -->
+  <div class="card mb-3">
+    <div class="card-header"><i class="bi bi-box-seam me-2"></i>Linia i numery</div>
+    <div class="card-body">
+      <div class="row g-2">
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Linia pakująca</label>
+          {{ form.packaging_line }}
+        </div>
+        <div class="col-md-2">
+          <label class="form-label fw-semibold small">Nr R&amp;D</label>
+          {{ form.rd_number }}
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Receptura powiązana</label>
+          {{ form.recipe }}
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold small">CRM Projekt Nr.</label>
+          {{ form.crm_project_nr }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Zespół -->
+  <div class="card mb-3">
+    <div class="card-header"><i class="bi bi-people me-2"></i>Zespół</div>
+    <div class="card-body">
+      <div class="row g-2">
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">R&amp;D</label>{{ form.person_rd }}
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">SC</label>{{ form.person_sc }}
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">QL</label>{{ form.person_ql }}
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">QA</label>{{ form.person_qa }}
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">SD</label>{{ form.person_sd }}
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">SDP</label>{{ form.person_sdp }}
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">PP</label>{{ form.person_pp }}
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">CE</label>{{ form.person_ce }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Akceptacja -->
+  <div class="card mb-3">
+    <div class="card-header"><i class="bi bi-person-check me-2"></i>Osoba akceptująca – dział SD</div>
+    <div class="card-body">
+      <div class="row g-2 align-items-end">
+        <div class="col-md-5">
+          <label class="form-label fw-semibold small">Osoba akceptująca (SD)</label>
+          {{ form.acceptor }}
+        </div>
+        <div class="col-md-5">
+          <label class="form-label fw-semibold small">
+            Email <span class="text-muted fw-normal">(auto-uzupełniany)</span>
+          </label>
+          {{ form.acceptor_email }}
+        </div>
+        <div class="col-md-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm w-100"
+                  onclick="document.getElementById('id_acceptor_email').value=''">
+            <i class="bi bi-x-circle me-1"></i>Wyczyść
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-floppy me-1"></i>Zapisz
+    </button>
+    {% if production %}
+    <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary">Anuluj</a>
+    {% else %}
+    <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">Anuluj</a>
+    {% endif %}
+  </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-fill email akceptującego po wyborze z listy
+const acceptorSelect = document.getElementById('id_acceptor');
+const emailField     = document.getElementById('id_acceptor_email');
+
+if (acceptorSelect) {
+  acceptorSelect.addEventListener('change', function() {
+    const pk = this.value;
+    if (!pk) { emailField.value = ''; return; }
+    fetch(`/api/user-email/${pk}/`)
+      .then(r => r.json())
+      .then(data => { if (data.email) emailField.value = data.email; });
+  });
+}
+</script>
+{% endblock %}

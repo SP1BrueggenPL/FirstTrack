@@ -1,0 +1,173 @@
+{% extends "productions/base.html" %}
+{% block title %}Etap II Krok 1 – {{ production.product_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h4 class="mb-0"><i class="bi bi-eyedropper me-2"></i>Etap II – Parametry sensoryczne</h4>
+    <small class="text-muted">{{ production.product_name }} &nbsp;|&nbsp; Krok 1 z 2</small>
+  </div>
+  <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Powrót
+  </a>
+</div>
+
+<!-- Pasek kroków -->
+<div class="step-indicator mb-4">
+  <div class="step active"><i class="bi bi-1-circle me-1"></i>Sensoryczne</div>
+  <div class="step"><i class="bi bi-2-circle me-1"></i>Pakowanie</div>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  {{ sensory_fs.management_form }}
+
+  <!-- Dane nagłówkowe -->
+  <div class="card mb-3">
+    <div class="card-header"><i class="bi bi-info-circle me-2"></i>Dane produkcji</div>
+    <div class="card-body">
+      <div class="row g-3 mb-3">
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Linia pakująca</label>
+          {{ form.packaging_line }}
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Data produkcji</label>
+          {{ form.production_date }}
+        </div>
+      </div>
+      <label class="fw-semibold small">Ocena próbki wzorcowej (pobranie):</label>
+      <div class="d-flex gap-3 mt-1">
+        <div class="form-check form-check-inline">
+          {{ form.sample_start }}
+          <label class="form-check-label" for="{{ form.sample_start.id_for_label }}">Początek</label>
+        </div>
+        <div class="form-check form-check-inline">
+          {{ form.sample_middle }}
+          <label class="form-check-label" for="{{ form.sample_middle.id_for_label }}">Środek</label>
+        </div>
+        <div class="form-check form-check-inline">
+          {{ form.sample_end }}
+          <label class="form-check-label" for="{{ form.sample_end.id_for_label }}">Koniec</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Parametry sensoryczne -->
+  <div class="card mb-3">
+    <div class="card-header"><i class="bi bi-eyedropper me-2"></i>Parametry sensoryczne produktu</div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table checklist-table mb-0">
+          <thead class="table-light">
+            <tr>
+              <th style="width:18%">Parametr</th>
+              <th>Tak / Nie / N/D</th>
+              <th>Uwagi</th>
+              <th>Korekta</th>
+              <th>Kto?</th>
+              <th>Kiedy?</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in sensory_fs %}
+              {{ f.id }}
+              <tr>
+                <td class="fw-semibold">{{ f.instance.get_param_display }}</td>
+                <td>{% include "productions/_status_radio.html" with field=f.status %}</td>
+                <td>{{ f.uwagi }}</td>
+                <td>{{ f.korekta }}</td>
+                <td>{{ f.kto }}</td>
+                <td>{{ f.kiedy }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Wyniki -->
+  <div class="card mb-3">
+    <div class="card-header"><i class="bi bi-speedometer2 me-2"></i>Wyniki</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label class="fw-semibold small">Porównanie z próbką referencyjną</label>
+          <div class="d-flex gap-3 mt-1">
+            <div class="form-check">
+              {{ form.comparison_benchmark }}
+              <label class="form-check-label" for="{{ form.comparison_benchmark.id_for_label }}">Benchmark</label>
+            </div>
+            <div class="form-check">
+              {{ form.comparison_lab }}
+              <label class="form-check-label" for="{{ form.comparison_lab.id_for_label }}">Lab.</label>
+            </div>
+            <div class="form-check">
+              {{ form.comparison_reference }}
+              <label class="form-check-label" for="{{ form.comparison_reference.id_for_label }}">Wzorcowa</label>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-2">
+          <label class="fw-semibold small">Wydajność kg/h</label>
+          {{ form.yield_kg }}
+        </div>
+        <div class="col-md-2">
+          <label class="fw-semibold small">Takty</label>
+          {{ form.yield_takty }}
+        </div>
+        <div class="col-12">
+          <label class="fw-semibold small">Uwagi</label>
+          {{ form.uwagi }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Podpisy -->
+  <div class="card mb-3">
+    <div class="card-header"><i class="bi bi-pen me-2"></i>Podpisy obecnych członków zespołu</div>
+    <div class="card-body">
+      {{ form.sig_rd }}{{ form.sig_sc }}{{ form.sig_ql }}{{ form.sig_qa }}
+      {{ form.sig_sd }}{{ form.sig_sdp }}{{ form.sig_pp }}{{ form.sig_ce }}
+      {% if team_sig_fields %}
+      <div class="row g-3">
+        {% for role, field_name, person in team_sig_fields %}
+        {% if person %}
+        <div class="col-md-4 col-lg-3">
+          <div class="small fw-semibold mb-1">{{ role }} – {{ person.get_full_name }}</div>
+          <div class="border rounded bg-white" style="touch-action:none; cursor:crosshair;">
+            <canvas class="team-sig-canvas" data-field="{{ field_name }}" style="width:100%; height:110px; display:block;"></canvas>
+          </div>
+          <button type="button" class="btn btn-outline-secondary btn-sm mt-1 sig-clear-btn" data-field="{{ field_name }}">
+            <i class="bi bi-eraser me-1"></i>Wyczyść
+          </button>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-muted small mb-0">Brak przypisanego zespołu.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="submit" name="save" class="btn btn-outline-primary">
+      <i class="bi bi-floppy me-1"></i>Zapisz roboczo
+    </button>
+    <button type="submit" name="next" class="btn btn-primary">
+      Dalej: Pakowanie <i class="bi bi-arrow-right ms-1"></i>
+    </button>
+    <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary">Anuluj</a>
+  </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+{% include "productions/_sig_canvas_js.html" %}
+</script>
+{% endblock %}

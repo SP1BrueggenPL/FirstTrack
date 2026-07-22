@@ -1,0 +1,24 @@
+# Sekrety – NIGDY nie wrzucaj do repozytorium
+.env
+
+# Django
+*.pyc
+__pycache__/
+db.sqlite3
+media/
+sent_emails/
+
+# Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# System
+.DS_Store
+Thumbs.db
+
+# Wewnętrzne dokumenty firmowe / dane deweloperskie z sekretami
+Pierwsza Produkcja/
+.claude/settings.local.json
