@@ -3,3 +3,5 @@ openai>=1.30
 Pillow>=10.0
 python-dotenv>=1.0
 playwright>=1.40
+psycopg2-binary>=2.9
+
