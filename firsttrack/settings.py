@@ -16,6 +16,11 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
+# Django 4.0+ requires CSRF_TRUSTED_ORIGINS for HTTPS requests behind a proxy.
+# Azure sets WEBSITE_HOSTNAME automatically (e.g. myapp.azurewebsites.net).
+_HOSTNAME = os.environ.get('WEBSITE_HOSTNAME', '').strip()
+CSRF_TRUSTED_ORIGINS = [f'https://{_HOSTNAME}'] if _HOSTNAME else []
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
