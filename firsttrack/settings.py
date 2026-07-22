@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+from urllib.parse import urlparse, parse_qs
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -56,12 +57,31 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'firsttrack.wsgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# PostgreSQL if DATABASE_URL is set, e.g.
+# postgresql://user:password@host.postgres.database.azure.com/dbname?sslmode=require
+# (Azure App Service → Configuration → App settings), otherwise local SQLite.
+_DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
+if _DATABASE_URL:
+    _url = urlparse(_DATABASE_URL)
+    _sslmode = parse_qs(_url.query).get('sslmode', ['require'])[0]
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'HOST': _url.hostname,
+            'PORT': _url.port or 5432,
+            'NAME': _url.path.lstrip('/'),
+            'USER': _url.username,
+            'PASSWORD': _url.password,
+            'OPTIONS': {'sslmode': _sslmode},
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
