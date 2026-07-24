@@ -1,9 +1,9 @@
 {% extends "productions/base.html" %}
-{% block title %}Zmiana hasła{% endblock %}
+{% block title %}Zmiana numeru chip{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h4 class="mb-0"><i class="bi bi-key me-2"></i>Reset hasła</h4>
+  <h4 class="mb-0"><i class="bi bi-key me-2"></i>Zmiana numeru chip</h4>
   <a href="{% url 'user_list' %}" class="btn btn-outline-secondary btn-sm">
     <i class="bi bi-arrow-left me-1"></i>Powrót
   </a>
@@ -20,27 +20,22 @@
       </div>
       <div class="card-body">
         <p class="text-muted small mb-3">
-          Ustaw nowe hasło dla użytkownika <strong>{{ edit_user.get_full_name }}</strong>
-          ({{ edit_user.email }}).
+          Ustaw nowy 5-cyfrowy numer chip dla użytkownika <strong>{{ edit_user.get_full_name }}</strong>
+          ({{ edit_user.email }}). Ten numer służy do logowania w FirstTrack.
         </p>
         <form method="post">
           {% csrf_token %}
           <div class="mb-3">
-            <label class="form-label fw-semibold">Nowe hasło *</label>
-            {{ form.password1 }}
-            {% if form.password1.errors %}<div class="text-danger small mt-1">{{ form.password1.errors }}</div>{% endif %}
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Powtórz nowe hasło *</label>
-            {{ form.password2 }}
-            {% if form.password2.errors %}<div class="text-danger small mt-1">{{ form.password2.errors }}</div>{% endif %}
+            <label class="form-label fw-semibold">Nowy numer chip *</label>
+            {{ form.chip_number }}
+            {% if form.chip_number.errors %}<div class="text-danger small mt-1">{{ form.chip_number.errors }}</div>{% endif %}
           </div>
           {% if form.non_field_errors %}
           <div class="alert alert-danger py-2 small">{{ form.non_field_errors }}</div>
           {% endif %}
           <div class="d-flex gap-2 mt-3">
             <button type="submit" class="btn btn-warning">
-              <i class="bi bi-key me-1"></i>Ustaw nowe hasło
+              <i class="bi bi-key me-1"></i>Ustaw nowy numer chip
             </button>
             <a href="{% url 'user_list' %}" class="btn btn-outline-secondary">Anuluj</a>
           </div>

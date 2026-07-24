@@ -2,11 +2,14 @@ import json
 import base64
 import logging
 from .pdf_views import pdf_etap1, pdf_etap2, pdf_etap3
+from django.core.cache import cache
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
+from django.contrib.auth import authenticate, login as auth_login
 from django.contrib.auth.models import User
 from django.http import JsonResponse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.core.mail import send_mail
 from django.conf import settings
 from django.views.decorators.http import require_POST
@@ -14,7 +17,7 @@ from django.contrib.auth.decorators import login_required
 
 from .models import (
     FirstProduction, ChecklistBefore, ChecklistAfter,
-    EmailLog, UserProfile, DEPT_CHOICES,
+    EmailLog, UserProfile, NotificationRecipient, DEPT_CHOICES,
 )
 from .forms import (
     FirstProductionForm, SAPImportForm,
@@ -22,10 +25,48 @@ from .forms import (
     ChecklistAfterSensoryForm, ChecklistAfterPackagingForm, ChecklistAfterAcceptanceForm,
     ChecklistAfterHeaderForm,
     SensoryParamFormSet, PackagingItemFormSet,
-    UserCreateForm, UserEditForm, UserPasswordForm,
+    UserCreateForm, UserEditForm, UserChipForm, NotificationRecipientForm,
 )
 
 logger = logging.getLogger(__name__)
+
+CHIP_LOGIN_MAX_ATTEMPTS = 5
+CHIP_LOGIN_LOCKOUT_SECONDS = 300
+
+
+def _client_ip(request):
+    forwarded = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR', 'unknown')
+
+
+def chip_login(request):
+    """Logowanie samym 5-cyfrowym numerem chip (bez loginu/hasła)."""
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+
+    cache_key = f'chip_login_fail_{_client_ip(request)}'
+    locked_out = cache.get(cache_key, 0) >= CHIP_LOGIN_MAX_ATTEMPTS
+    error = None
+    next_url = request.POST.get('next') or request.GET.get('next') or ''
+
+    if request.method == 'POST' and not locked_out:
+        chip_number = request.POST.get('chip_number', '').strip()
+        user = authenticate(request, chip_number=chip_number)
+        if user is not None:
+            cache.delete(cache_key)
+            auth_login(request, user)
+            if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+                next_url = ''
+            return redirect(next_url or 'dashboard')
+        cache.set(cache_key, cache.get(cache_key, 0) + 1, CHIP_LOGIN_LOCKOUT_SECONDS)
+        error = True
+        locked_out = cache.get(cache_key, 0) >= CHIP_LOGIN_MAX_ATTEMPTS
+
+    return render(request, 'productions/login.html', {
+        'error': error, 'locked_out': locked_out, 'next': next_url,
+    })
 
 
 # ──────────────────────────────────────────────
@@ -574,14 +615,27 @@ def send_production_email(request, pk):
     subject = f'[FirstTrack] Pierwsza produkcja: {prod.product_name} – {prod.data_produkcji or "data TBD"}'
     body    = _build_email_body(prod)
 
-    recipients = []
+    recipients = set()
     email = prod.acceptor_email or (prod.acceptor.email if prod.acceptor else '')
     if email:
-        recipients.append(email)
-    group_emails = settings.PRODUCTION_EMAIL_GROUPS
-    if group_emails:
-        recipients += [e.strip() for e in group_emails.split(',') if e.strip()]
-    recipients = list(set(recipients))
+        recipients.add(email)
+
+    # Stała pula adresów – zawsze przy pierwszej produkcji (zarządzanie → adresy email)
+    recipients.update(
+        NotificationRecipient.objects.filter(active=True).values_list('email', flat=True)
+    )
+
+    # Reszta zespołu przypisanego do tej konkretnej produkcji
+    team_fields = [
+        'person_rd', 'person_sc', 'person_ql', 'person_qa',
+        'person_sd', 'person_sdp', 'person_pp', 'person_ce',
+    ]
+    for field in team_fields:
+        person = getattr(prod, field)
+        if person and person.email:
+            recipients.add(person.email)
+
+    recipients = sorted(recipients)
 
     success = True
     error_msg = ''
@@ -679,13 +733,17 @@ def user_create(request):
             user = User.objects.create_user(
                 username=username,
                 email=d['email'],
-                password=d['password1'],
                 first_name=d['first_name'],
                 last_name=d['last_name'],
             )
+            # Numer chip zastępuje hasło – ustawiany też jako hasło Django,
+            # żeby ten sam numer działał do logowania w panelu /admin/.
+            user.set_password(d['chip_number'])
+            user.save()
             profile, _ = UserProfile.objects.get_or_create(user=user)
             profile.department = d['department']
             profile.phone = d.get('phone', '')
+            profile.chip_number = d['chip_number']
             profile.save()
 
             messages.success(request, f'Konto dla {user.get_full_name()} zostało utworzone.')
@@ -734,18 +792,51 @@ def user_edit(request, pk):
 
 
 @login_required
-def user_password(request, pk):
+def user_chip(request, pk):
     user = get_object_or_404(User, pk=pk)
-    form = UserPasswordForm()
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    form = UserChipForm(user=user)
 
     if request.method == 'POST':
-        form = UserPasswordForm(request.POST)
+        form = UserChipForm(request.POST, user=user)
         if form.is_valid():
-            user.set_password(form.cleaned_data['password1'])
+            chip_number = form.cleaned_data['chip_number']
+            profile.chip_number = chip_number
+            profile.save()
+            user.set_password(chip_number)
             user.save()
-            messages.success(request, f'Hasło dla {user.get_full_name()} zostało zmienione.')
+            messages.success(request, f'Numer chip dla {user.get_full_name()} został zmieniony.')
             return redirect('user_list')
 
-    return render(request, 'productions/user_password.html', {
+    return render(request, 'productions/user_chip.html', {
         'form': form, 'edit_user': user,
     })
+
+
+# ══════════════════════════════════════════════
+# Zarządzanie stałą pulą adresów email (pierwsza produkcja)
+# ══════════════════════════════════════════════
+
+@login_required
+def notification_email_list(request):
+    form = NotificationRecipientForm()
+    if request.method == 'POST':
+        form = NotificationRecipientForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Adres email został dodany do stałej puli.')
+            return redirect('notification_email_list')
+
+    return render(request, 'productions/notification_email_list.html', {
+        'form': form,
+        'recipients': NotificationRecipient.objects.all(),
+    })
+
+
+@login_required
+@require_POST
+def notification_email_delete(request, pk):
+    recipient = get_object_or_404(NotificationRecipient, pk=pk)
+    recipient.delete()
+    messages.success(request, f'Adres {recipient.email} został usunięty ze stałej puli.')
+    return redirect('notification_email_list')

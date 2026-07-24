@@ -66,14 +66,9 @@
             {% if is_create %}
             <div class="col-12"><hr class="my-1"></div>
             <div class="col-md-6">
-              <label class="form-label fw-semibold">Hasło *</label>
-              {{ form.password1 }}
-              {% if form.password1.errors %}<div class="text-danger small">{{ form.password1.errors }}</div>{% endif %}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label fw-semibold">Powtórz hasło *</label>
-              {{ form.password2 }}
-              {% if form.password2.errors %}<div class="text-danger small">{{ form.password2.errors }}</div>{% endif %}
+              <label class="form-label fw-semibold">Numer chip (5 cyfr) *</label>
+              {{ form.chip_number }}
+              {% if form.chip_number.errors %}<div class="text-danger small">{{ form.chip_number.errors }}</div>{% endif %}
             </div>
             {% endif %}
           </div>
@@ -88,8 +83,8 @@
               {% if is_create %}Utwórz konto{% else %}Zapisz zmiany{% endif %}
             </button>
             {% if not is_create %}
-            <a href="{% url 'user_password' edit_user.pk %}" class="btn btn-outline-warning">
-              <i class="bi bi-key me-1"></i>Zmień hasło
+            <a href="{% url 'user_chip' edit_user.pk %}" class="btn btn-outline-warning">
+              <i class="bi bi-key me-1"></i>Zmień numer chip
             </a>
             {% endif %}
             <a href="{% url 'user_list' %}" class="btn btn-outline-secondary">Anuluj</a>

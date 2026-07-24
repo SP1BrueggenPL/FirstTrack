@@ -29,5 +29,9 @@ urlpatterns = [
     path('uzytkownicy/', views.user_list, name='user_list'),
     path('uzytkownicy/nowy/', views.user_create, name='user_create'),
     path('uzytkownicy/<int:pk>/edytuj/', views.user_edit, name='user_edit'),
-    path('uzytkownicy/<int:pk>/haslo/', views.user_password, name='user_password'),
+    path('uzytkownicy/<int:pk>/chip/', views.user_chip, name='user_chip'),
+
+    # Zarządzanie – stała pula adresów email (pierwsza produkcja)
+    path('ustawienia/maile/', views.notification_email_list, name='notification_email_list'),
+    path('ustawienia/maile/<int:pk>/usun/', views.notification_email_delete, name='notification_email_delete'),
 ]

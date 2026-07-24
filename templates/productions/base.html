@@ -428,9 +428,15 @@
       <span class="nav-label">Zarządzanie</span>
       <ul class="nav flex-column">
         <li>
-          <a class="nav-link {% if request.resolver_match.url_name in 'user_list,user_create,user_edit,user_password' %}active{% endif %}"
+          <a class="nav-link {% if request.resolver_match.url_name in 'user_list,user_create,user_edit,user_chip' %}active{% endif %}"
              href="{% url 'user_list' %}">
             <i class="bi bi-people"></i> Użytkownicy
+          </a>
+        </li>
+        <li>
+          <a class="nav-link {% if request.resolver_match.url_name in 'notification_email_list,notification_email_delete' %}active{% endif %}"
+             href="{% url 'notification_email_list' %}">
+            <i class="bi bi-envelope"></i> Adresy email (I produkcja)
           </a>
         </li>
         <li>

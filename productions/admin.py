@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
 from .models import (
     FirstProduction, ChecklistBefore, ChecklistAfter,
-    SensoryParam, PackagingItem, EmailLog, UserProfile,
+    SensoryParam, PackagingItem, EmailLog, UserProfile, NotificationRecipient,
 )
 
 
@@ -62,3 +62,10 @@ class ChecklistAfterAdmin(admin.ModelAdmin):
 class EmailLogAdmin(admin.ModelAdmin):
     list_display = ['production', 'recipient', 'sent_at', 'success']
     list_filter  = ['success']
+
+
+@admin.register(NotificationRecipient)
+class NotificationRecipientAdmin(admin.ModelAdmin):
+    list_display = ['email', 'label', 'active', 'created_at']
+    list_filter  = ['active']
+    search_fields = ['email', 'label']

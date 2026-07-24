@@ -1,9 +1,12 @@
+from django.core.validators import RegexValidator
 from django.db import models
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
 ITEM_STATUS = [('tak', 'Tak'), ('nie', 'Nie'), ('nd', 'Nie dotyczy'), ('', '-')]
+
+chip_number_validator = RegexValidator(r'^\d{5}$', 'Numer chip musi składać się z dokładnie 5 cyfr.')
 
 DEPT_CHOICES = [
     ('RD',  'R&D'),
@@ -22,9 +25,14 @@ DEPT_CHOICES = [
 # ──────────────────────────────────────────────────────────
 
 class UserProfile(models.Model):
-    user       = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
-    department = models.CharField('Dział', max_length=10, choices=DEPT_CHOICES, blank=True)
-    phone      = models.CharField('Telefon', max_length=30, blank=True)
+    user        = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    department  = models.CharField('Dział', max_length=10, choices=DEPT_CHOICES, blank=True)
+    phone       = models.CharField('Telefon', max_length=30, blank=True)
+    chip_number = models.CharField(
+        'Numer chip', max_length=5, unique=True, null=True, blank=True,
+        validators=[chip_number_validator],
+        help_text='5-cyfrowy numer używany do logowania (zamiast hasła).',
+    )
 
     class Meta:
         verbose_name = 'Profil użytkownika'
@@ -64,7 +72,7 @@ def _person_fk(dept_code, related, label):
 class FirstProduction(models.Model):
     STATUS_CHOICES = [
         ('nowa',      'Nowa'),
-        ('etap1',     'Etap I – Spotkanie'),
+        ('etap1',     'Etap I'),
         ('etap2',     'Etap II – Produkcja'),
         ('etap3',     'Etap III – Test pakowania'),
         ('zwolniona', 'Zwolniona do sprzedaży'),
@@ -316,3 +324,22 @@ class EmailLog(models.Model):
 
     def __str__(self):
         return f"Mail do {self.recipient} – {self.sent_at:%Y-%m-%d %H:%M}"
+
+
+# ──────────────────────────────────────────────────────────
+# Stała pula odbiorców maili o pierwszej produkcji
+# ──────────────────────────────────────────────────────────
+
+class NotificationRecipient(models.Model):
+    email      = models.EmailField('Adres email', unique=True)
+    label      = models.CharField('Opis', max_length=100, blank=True)
+    active     = models.BooleanField('Aktywny', default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['email']
+        verbose_name = 'Stały odbiorca (pierwsza produkcja)'
+        verbose_name_plural = 'Stali odbiorcy (pierwsza produkcja)'
+
+    def __str__(self):
+        return f"{self.email} ({self.label})" if self.label else self.email
