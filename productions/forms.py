@@ -1,9 +1,8 @@
 from django import forms
 from django.contrib.auth.models import User
-from django.contrib.auth.forms import SetPasswordForm  # reuse built-in
 from .models import (
     FirstProduction, ChecklistBefore, ChecklistAfter,
-    SensoryParam, PackagingItem, UserProfile, DEPT_CHOICES,
+    SensoryParam, PackagingItem, UserProfile, NotificationRecipient, DEPT_CHOICES,
 )
 
 ITEM_STATUS_CHOICES = [('', '–'), ('tak', 'Tak'), ('nie', 'Nie'), ('nd', 'N/D')]
@@ -23,6 +22,12 @@ def _date(css='form-control form-control-sm'):
 # Użytkownicy
 # ──────────────────────────────────────────────────────────
 
+_CHIP_WIDGET = forms.TextInput(attrs={
+    'class': 'form-control', 'inputmode': 'numeric', 'pattern': r'\d{5}',
+    'maxlength': 5, 'placeholder': 'np. 04821', 'autocomplete': 'off',
+})
+
+
 class UserCreateForm(forms.Form):
     first_name = forms.CharField(label='Imię', max_length=150,
                                  widget=_fc('Imię', 'form-control'))
@@ -34,9 +39,7 @@ class UserCreateForm(forms.Form):
                                    widget=_sel('form-select'))
     phone      = forms.CharField(label='Telefon', max_length=30, required=False,
                                  widget=_fc('np. +48 500 000 000', 'form-control'))
-    password1  = forms.CharField(label='Hasło', widget=forms.PasswordInput(attrs={'class': 'form-control'}))
-    password2  = forms.CharField(label='Powtórz hasło',
-                                 widget=forms.PasswordInput(attrs={'class': 'form-control'}))
+    chip_number = forms.CharField(label='Numer chip (5 cyfr)', widget=_CHIP_WIDGET)
 
     def clean_email(self):
         email = self.cleaned_data['email']
@@ -44,11 +47,13 @@ class UserCreateForm(forms.Form):
             raise forms.ValidationError('Użytkownik z tym adresem email już istnieje.')
         return email
 
-    def clean(self):
-        data = super().clean()
-        if data.get('password1') != data.get('password2'):
-            self.add_error('password2', 'Hasła nie są identyczne.')
-        return data
+    def clean_chip_number(self):
+        chip = self.cleaned_data['chip_number'].strip()
+        if not chip.isdigit() or len(chip) != 5:
+            raise forms.ValidationError('Numer chip musi składać się z dokładnie 5 cyfr.')
+        if UserProfile.objects.filter(chip_number=chip).exists():
+            raise forms.ValidationError('Ten numer chip jest już przypisany do innego użytkownika.')
+        return chip
 
 
 class UserEditForm(forms.Form):
@@ -66,17 +71,38 @@ class UserEditForm(forms.Form):
     is_staff   = forms.BooleanField(label='Admin', required=False)
 
 
-class UserPasswordForm(forms.Form):
-    password1 = forms.CharField(label='Nowe hasło',
-                                widget=forms.PasswordInput(attrs={'class': 'form-control'}))
-    password2 = forms.CharField(label='Powtórz hasło',
-                                widget=forms.PasswordInput(attrs={'class': 'form-control'}))
+class UserChipForm(forms.Form):
+    chip_number = forms.CharField(label='Nowy numer chip (5 cyfr)', widget=_CHIP_WIDGET)
 
-    def clean(self):
-        data = super().clean()
-        if data.get('password1') != data.get('password2'):
-            self.add_error('password2', 'Hasła nie są identyczne.')
-        return data
+    def __init__(self, *args, user=None, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+
+    def clean_chip_number(self):
+        chip = self.cleaned_data['chip_number'].strip()
+        if not chip.isdigit() or len(chip) != 5:
+            raise forms.ValidationError('Numer chip musi składać się z dokładnie 5 cyfr.')
+        qs = UserProfile.objects.filter(chip_number=chip)
+        if self.user is not None:
+            qs = qs.exclude(user=self.user)
+        if qs.exists():
+            raise forms.ValidationError('Ten numer chip jest już przypisany do innego użytkownika.')
+        return chip
+
+
+# ──────────────────────────────────────────────────────────
+# Stała pula adresów email (pierwsza produkcja)
+# ──────────────────────────────────────────────────────────
+
+class NotificationRecipientForm(forms.ModelForm):
+    class Meta:
+        model = NotificationRecipient
+        fields = ['email', 'label', 'active']
+        widgets = {
+            'email': forms.EmailInput(attrs={'class': 'form-control', 'placeholder': 'adres@brueggen.com'}),
+            'label': _fc('np. Dział jakości', 'form-control'),
+            'active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        }
 
 
 # ──────────────────────────────────────────────────────────

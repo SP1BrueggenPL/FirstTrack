@@ -1,0 +1,90 @@
+{% extends "productions/base.html" %}
+{% block title %}Adresy email – pierwsza produkcja{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h4><i class="bi bi-envelope me-2"></i>Stała pula adresów email</h4>
+</div>
+
+<p class="text-muted small mb-3">
+  Adresy z tej listy otrzymują mail o <strong>każdej</strong> pierwszej produkcji, niezależnie
+  od osób przypisanych do zespołu danej produkcji. Reszta wiadomości trafia dodatkowo do
+  osób wskazanych w zespole (R&amp;D, SC, QL, QA, SD, SDP, PP, CE) i do akceptującego.
+</p>
+
+<div class="row g-3">
+  <div class="col-md-5">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-plus-circle me-2"></i>Dodaj adres</div>
+      <div class="card-body">
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Adres email *</label>
+            {{ form.email }}
+            {% if form.email.errors %}<div class="text-danger small mt-1">{{ form.email.errors }}</div>{% endif %}
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Opis</label>
+            {{ form.label }}
+          </div>
+          <div class="form-check mb-3">
+            {{ form.active }}
+            <label class="form-check-label fw-semibold" for="{{ form.active.id_for_label }}">Aktywny</label>
+          </div>
+          {% if form.non_field_errors %}
+          <div class="alert alert-danger py-2 small">{{ form.non_field_errors }}</div>
+          {% endif %}
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-floppy me-1"></i>Dodaj do puli
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-7">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-list-ul me-2"></i>Adresy w puli</div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Opis</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in recipients %}
+            <tr>
+              <td class="font-monospace small">{{ r.email }}</td>
+              <td class="text-muted small">{{ r.label|default:"–" }}</td>
+              <td>
+                {% if r.active %}
+                  <span class="badge bg-success">Aktywny</span>
+                {% else %}
+                  <span class="badge bg-secondary">Wyłączony</span>
+                {% endif %}
+              </td>
+              <td>
+                <form method="post" action="{% url 'notification_email_delete' r.pk %}"
+                      onsubmit="return confirm('Usunąć adres {{ r.email }} ze stałej puli?');">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-2" title="Usuń">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="4" class="text-center text-muted py-4">Brak adresów w puli.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

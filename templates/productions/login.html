@@ -15,6 +15,9 @@
     .login-header small { opacity: .75; font-size: .8rem; }
     .btn-login { background: var(--br-burg); border-color: var(--br-burg); color: #fff; }
     .btn-login:hover { background: #4e1525; border-color: #4e1525; color: #fff; }
+    .chip-input {
+      font-size: 2rem; letter-spacing: .6rem; text-align: center; font-weight: 700;
+    }
   </style>
 </head>
 <body>
@@ -26,25 +29,25 @@
     </div>
     <div class="card border-top-0" style="border-radius: 0 0 .5rem .5rem">
       <div class="card-body p-4">
-        {% if form.errors %}
+        {% if locked_out %}
         <div class="alert alert-danger py-2 small mb-3">
-          <i class="bi bi-exclamation-triangle me-1"></i>Nieprawidłowy login lub hasło.
+          <i class="bi bi-lock me-1"></i>Zbyt wiele nieudanych prób. Spróbuj ponownie za kilka minut.
+        </div>
+        {% elif error %}
+        <div class="alert alert-danger py-2 small mb-3">
+          <i class="bi bi-exclamation-triangle me-1"></i>Nieprawidłowy numer chip.
         </div>
         {% endif %}
         <form method="post">
           {% csrf_token %}
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Login</label>
-            <input type="text" name="username" autofocus autocomplete="username"
-                   class="form-control" placeholder="login lub email">
-          </div>
           <div class="mb-4">
-            <label class="form-label fw-semibold">Hasło</label>
-            <input type="password" name="password" autocomplete="current-password"
-                   class="form-control">
+            <label class="form-label fw-semibold text-center d-block">Numer chip</label>
+            <input type="password" inputmode="numeric" pattern="\d{5}" maxlength="5"
+                   name="chip_number" autofocus autocomplete="off"
+                   class="form-control chip-input" {% if locked_out %}disabled{% endif %}>
           </div>
           <input type="hidden" name="next" value="{{ next }}">
-          <button type="submit" class="btn btn-login w-100">
+          <button type="submit" class="btn btn-login w-100" {% if locked_out %}disabled{% endif %}>
             <i class="bi bi-box-arrow-in-right me-1"></i>Zaloguj się
           </button>
         </form>

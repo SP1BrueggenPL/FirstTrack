@@ -99,6 +99,13 @@ LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/login/'
 
+# Logowanie po numerze chip (ChipNumberBackend); ModelBackend zostaje dla
+# panelu /admin/ (login + numer chip zapisany jako hasło użytkownika).
+AUTHENTICATION_BACKENDS = [
+    'productions.auth_backends.ChipNumberBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
 LANGUAGE_CODE = 'pl'
 TIME_ZONE = 'Europe/Warsaw'
 USE_I18N = True
@@ -117,12 +124,15 @@ AZURE_OPENAI_KEY = os.environ.get('AZURE_OPENAI_KEY', '')
 AZURE_OPENAI_ENDPOINT = os.environ.get('AZURE_OPENAI_ENDPOINT', '')
 AZURE_OPENAI_DEPLOYMENT = os.environ.get('AZURE_OPENAI_DEPLOYMENT', 'gpt-4o')
 
-# Email – domyślnie zapis do pliku (zmień na SMTP dla produkcji)
-EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
-EMAIL_FILE_PATH = BASE_DIR / 'sent_emails'
+# Email – Azure Communication Services (Email Communication Service +
+# Email Communication Services Domain). Bez skonfigurowanych danych
+# dostępowych maile trafiają lokalnie do pliku (tryb deweloperski).
 DEFAULT_FROM_EMAIL = 'firsttrack@brueggen.com'
+ACS_EMAIL_CONNECTION_STRING = os.environ.get('ACS_EMAIL_CONNECTION_STRING', '')
+ACS_EMAIL_SENDER_ADDRESS = os.environ.get('ACS_EMAIL_SENDER_ADDRESS', '')
 
-# Grupy odbiorców maili
-PRODUCTION_EMAIL_GROUPS = os.environ.get(
-    'PRODUCTION_EMAIL_GROUPS', 'produkcja@brueggen.com'
-)
+if ACS_EMAIL_CONNECTION_STRING and ACS_EMAIL_SENDER_ADDRESS:
+    EMAIL_BACKEND = 'productions.email_backend.AzureCommunicationEmailBackend'
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
+    EMAIL_FILE_PATH = BASE_DIR / 'sent_emails'
