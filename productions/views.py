@@ -10,7 +10,7 @@ from django.contrib.auth.models import User
 from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.core.mail import send_mail
+from django.core.mail import send_mail, EmailMessage
 from django.conf import settings
 from django.views.decorators.http import require_POST
 from django.contrib.auth.decorators import login_required
@@ -75,6 +75,8 @@ def chip_login(request):
 
 @login_required
 def dashboard(request):
+    _send_due_production_reminders()
+
     productions = FirstProduction.objects.select_related(
         'person_sd', 'acceptor'
     ).all()
@@ -470,6 +472,7 @@ def checklist_after_sensory(request, pk):
             sensory_fs.save()
             messages.success(request, 'Parametry sensoryczne zapisane.')
             if 'next' in request.POST:
+                _send_sensory_accepted_email(prod, ca)
                 return redirect('checklist_after_packaging', pk=pk)
             return redirect('checklist_after_sensory', pk=pk)
 
@@ -508,6 +511,7 @@ def checklist_after_packaging(request, pk):
             packaging_fs.save()
             messages.success(request, 'Etap II zatwierdzony.' if 'complete' in request.POST else 'Checklista pakowania zapisana.')
             if 'complete' in request.POST:
+                _send_packaging_accepted_email(prod)
                 return redirect('production_detail', pk=pk)
             return redirect('checklist_after_packaging', pk=pk)
 
@@ -569,6 +573,7 @@ def release_production(request, pk):
                 prod.status = 'zwolniona'
                 prod.save()
                 messages.success(request, f'Produkcja „{prod.product_name}" zwolniona do sprzedaży.')
+                _send_release_email(prod, ca)
             else:
                 messages.success(request, 'Akceptacja zapisana.')
             return redirect('production_detail', pk=pk)
@@ -751,6 +756,153 @@ def _notify_new_productions(productions):
             production=p, recipient=', '.join(recipients),
             subject=subject, body=body, success=success, error_msg=error_msg,
         )
+
+
+def _production_team_recipients(prod):
+    """Stała pula adresów + osoby przypisane do zespołu tej konkretnej produkcji."""
+    recipients = set(
+        NotificationRecipient.objects.filter(active=True).values_list('email', flat=True)
+    )
+    team_fields = [
+        'person_rd', 'person_sc', 'person_ql', 'person_qa',
+        'person_sd', 'person_sdp', 'person_pp', 'person_ce',
+    ]
+    for field in team_fields:
+        person = getattr(prod, field)
+        if person and person.email:
+            recipients.add(person.email)
+    return sorted(recipients)
+
+
+def _send_and_log(prod, subject, body, recipients, email_message=None):
+    """Wysyła maila (plain-text albo gotowy EmailMessage z załącznikami) i zawsze
+    zapisuje próbę w EmailLog, niezależnie od wyniku."""
+    success = True
+    error_msg = ''
+    try:
+        if email_message is not None:
+            email_message.send(fail_silently=False)
+        else:
+            send_mail(subject=subject, message=body,
+                      from_email=settings.DEFAULT_FROM_EMAIL,
+                      recipient_list=recipients, fail_silently=False)
+    except Exception as e:
+        success = False
+        error_msg = str(e)
+        logger.error('Błąd wysyłki maila (%s): %s', subject, e)
+
+    EmailLog.objects.create(
+        production=prod, recipient=', '.join(recipients),
+        subject=subject, body=body, success=success, error_msg=error_msg,
+    )
+    return success
+
+
+def _send_due_production_reminders():
+    """Przypomnienie o produkcji zaplanowanej na dziś – wysyłane raz dziennie,
+    przy pierwszym wejściu na dashboard po północy (bez potrzeby harmonogramu)."""
+    today = timezone.localdate()
+    due = (
+        FirstProduction.objects
+        .exclude(status='zwolniona')
+        .filter(data_produkcji=today)
+        .exclude(reminder_sent_at__date=today)
+    )
+    for prod in due:
+        recipients = _production_team_recipients(prod)
+        if not recipients:
+            continue
+        subject = f'[FirstTrack] Przypomnienie: dziś produkcja – {prod.product_name}'
+        body = '\n'.join([
+            f'Dziś ({today:%Y-%m-%d}) zaplanowana jest pierwsza produkcja:',
+            '',
+            f'Produkt:           {prod.product_name}',
+            f'Zlecenie SAP:      {prod.sap_zlecenie or "–"}',
+            f'Nr materiału SAP:  {prod.sap_material or "–"}',
+            f'Linia pakująca:    {prod.packaging_line or "–"}',
+            f'Zmiany:            {prod.zmiany or "–"}',
+            '',
+            f'Otwórz aplikację: {settings.FIRSTTRACK_APP_URL}',
+            '',
+            '-- FirstTrack, H. & J. Brüggen KG --',
+        ])
+        if _send_and_log(prod, subject, body, recipients):
+            prod.reminder_sent_at = timezone.now()
+            prod.save(update_fields=['reminder_sent_at'])
+
+
+def _send_sensory_accepted_email(prod, ca):
+    recipients = _production_team_recipients(prod)
+    if not recipients:
+        return
+    signed = [
+        (role, person.get_full_name() or person.username)
+        for role, fname, person in _all_sig_fields(prod)
+        if person and getattr(ca, fname)
+    ]
+    signed_lines = [f'  {role}: {name}' for role, name in signed] or ['  (brak podpisów)']
+    subject = f'[FirstTrack] Sensoryka zaakceptowana – {prod.product_name}'
+    body = '\n'.join([
+        f'Parametry sensoryczne dla produkcji „{prod.product_name}" zostały zaakceptowane.',
+        'Receptura została zatwierdzona w gronie zespołu – zgoda na przejście do pakowania.',
+        '',
+        'Zespół, który zaakceptował:',
+        *signed_lines,
+        '',
+        '-- FirstTrack, H. & J. Brüggen KG --',
+    ])
+    _send_and_log(prod, subject, body, recipients)
+
+
+def _send_packaging_accepted_email(prod):
+    recipients = _production_team_recipients(prod)
+    if not recipients:
+        return
+    subject = f'[FirstTrack] Pakowanie zaakceptowane – {prod.product_name}'
+    body = '\n'.join([
+        f'Etap II (pakowanie) dla produkcji „{prod.product_name}" został zaakceptowany.',
+        '',
+        '-- FirstTrack, H. & J. Brüggen KG --',
+    ])
+    _send_and_log(prod, subject, body, recipients)
+
+
+def _send_release_email(prod, ca):
+    recipients = _production_team_recipients(prod)
+    if not recipients:
+        return
+
+    subject = f'[FirstTrack] Zwolniona do sprzedaży – {prod.product_name}'
+    body = '\n'.join([
+        f'Zamówienie „{prod.product_name}" (zlecenie SAP {prod.sap_zlecenie or "–"}) '
+        f'zostało zwolnione do sprzedaży.',
+        f'Liczba UMK do śluzy: {ca.umk_count or "–"}',
+        '',
+        'W załączniku: checklista końcowa (PDF) oraz zdjęcia z produkcji.',
+        '',
+        '-- FirstTrack, H. & J. Brüggen KG --',
+    ])
+
+    email = EmailMessage(subject=subject, body=body,
+                         from_email=settings.DEFAULT_FROM_EMAIL, to=recipients)
+    try:
+        from .pdf_views import _render_pdf, _build_team_sigs
+        cb = getattr(prod, 'checklist_before', None)
+        pdf_bytes = _render_pdf('productions/pdf/etap3.html', {
+            'production': prod, 'cb': cb, 'ca': ca,
+            'sensory': ca.sensory_params.all(),
+            'packaging': ca.packaging_items.all(),
+            'team_sigs': _build_team_sigs(prod, ca),
+        })
+        email.attach(f'PP_{prod.sap_zlecenie}_Zwolnienie.pdf', pdf_bytes, 'application/pdf')
+        for field in ['photo_1', 'photo_2', 'photo_3', 'photo_4']:
+            photo = getattr(ca, field)
+            if photo:
+                email.attach_file(photo.path)
+    except Exception as e:
+        logger.error('Błąd generowania załączników maila o zwolnieniu: %s', e)
+
+    _send_and_log(prod, subject, body, recipients, email_message=email)
 
 
 # ══════════════════════════════════════════════
