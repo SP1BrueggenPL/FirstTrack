@@ -119,6 +119,7 @@ class FirstProduction(models.Model):
                                        upload_to='sap_screenshots/', blank=True, null=True)
     email_sent     = models.BooleanField('Mail wysłany', default=False)
     email_sent_at  = models.DateTimeField('Data wysłania maila', null=True, blank=True)
+    reminder_sent_at = models.DateTimeField('Data wysłania przypomnienia', null=True, blank=True)
     created_at     = models.DateTimeField(auto_now_add=True)
     updated_at     = models.DateTimeField(auto_now=True)
 
