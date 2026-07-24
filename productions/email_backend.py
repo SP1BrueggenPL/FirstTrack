@@ -1,9 +1,13 @@
 import logging
+import time
 
 from django.conf import settings
 from django.core.mail.backends.base import BaseEmailBackend
 
 logger = logging.getLogger(__name__)
+
+MAX_ATTEMPTS = 4
+RETRY_BACKOFF_SECONDS = 2
 
 
 class AzureCommunicationEmailBackend(BaseEmailBackend):
@@ -23,6 +27,7 @@ class AzureCommunicationEmailBackend(BaseEmailBackend):
             return 0
 
         from azure.communication.email import EmailClient
+        from azure.core.exceptions import HttpResponseError
 
         client = EmailClient.from_connection_string(connection_string)
         sent_count = 0
@@ -43,9 +48,21 @@ class AzureCommunicationEmailBackend(BaseEmailBackend):
                 },
             }
             try:
-                poller = client.begin_send(payload)
-                poller.result()
-                sent_count += 1
+                for attempt in range(1, MAX_ATTEMPTS + 1):
+                    try:
+                        poller = client.begin_send(payload)
+                        poller.result()
+                        sent_count += 1
+                        break
+                    except HttpResponseError as e:
+                        if e.status_code == 429 and attempt < MAX_ATTEMPTS:
+                            logger.warning(
+                                'Azure Communication Services – limit żądań (próba %s/%s), ponawiam za %ss',
+                                attempt, MAX_ATTEMPTS, RETRY_BACKOFF_SECONDS * attempt,
+                            )
+                            time.sleep(RETRY_BACKOFF_SECONDS * attempt)
+                            continue
+                        raise
             except Exception:
                 logger.exception('Błąd wysyłki maila przez Azure Communication Services')
                 if not self.fail_silently:
