@@ -136,3 +136,9 @@ if ACS_EMAIL_CONNECTION_STRING and ACS_EMAIL_SENDER_ADDRESS:
 else:
     EMAIL_BACKEND = 'django.core.mail.backends.filebased.EmailBackend'
     EMAIL_FILE_PATH = BASE_DIR / 'sent_emails'
+
+# Adres aplikacji – dodawany do maili powiadamiających o nowych produkcjach
+FIRSTTRACK_APP_URL = os.environ.get(
+    'FIRSTTRACK_APP_URL',
+    'https://firsttrackwilga-fubha2avbsakcsg4.polandcentral-01.azurewebsites.net/',
+)

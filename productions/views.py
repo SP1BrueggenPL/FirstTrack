@@ -233,6 +233,7 @@ def api_prefill_sap(request):
         if isinstance(rows, dict):
             rows = [rows]
         created_urls = []
+        created_productions = []
         for data in rows:
             date_val = data.get('data_produkcji') or None
             prod = FirstProduction.objects.create(
@@ -241,8 +242,10 @@ def api_prefill_sap(request):
                 product_name=data.get('product_name', '') or 'Nowa produkcja',
                 data_produkcji=date_val,
             )
+            created_productions.append(prod)
             from django.urls import reverse
             created_urls.append(reverse('production_detail', args=[prod.pk]))
+        _notify_new_productions(created_productions)
         return JsonResponse({'ok': True, 'redirect': created_urls[0] if len(created_urls) == 1 else '/dashboard/'})
     except Exception as e:
         return JsonResponse({'ok': False, 'error': str(e)}, status=400)
@@ -274,6 +277,7 @@ def production_new(request):
             if prod.acceptor and not prod.acceptor_email:
                 prod.acceptor_email = prod.acceptor.email
                 prod.save(update_fields=['acceptor_email'])
+            _notify_new_productions([prod])
             messages.success(request, f'Produkcja „{prod.product_name}" została dodana.')
             return redirect('production_detail', pk=prod.pk)
 
@@ -691,6 +695,67 @@ def _build_email_body(prod: FirstProduction) -> str:
         '-- FirstTrack, H. & J. Brüggen KG --',
     ]
     return '\n'.join(lines)
+
+
+def _notify_new_productions(productions):
+    """Mail do stałej puli adresów o nowo dodanych produkcjach – trzeba
+    uzupełnić dane oraz przypisać zespoły na zbliżające się produkcje."""
+    productions = list(productions)
+    if not productions:
+        return
+
+    recipients = sorted(set(
+        NotificationRecipient.objects.filter(active=True).values_list('email', flat=True)
+    ))
+    if not recipients:
+        return
+
+    subject = (
+        f'[FirstTrack] Nowa produkcja do uzupełnienia: {productions[0].product_name}'
+        if len(productions) == 1
+        else f'[FirstTrack] Nowe produkcje do uzupełnienia ({len(productions)})'
+    )
+
+    def col(value, width):
+        text = str(value) if value else '–'
+        return text[:width].ljust(width)
+
+    header = f'{col("Zlecenie SAP", 14)}{col("Nr materiału", 14)}{col("Produkt", 40)}{col("Data produkcji", 16)}'
+    rows = [
+        f'{col(p.sap_zlecenie, 14)}{col(p.sap_material, 14)}{col(p.product_name, 40)}{col(p.data_produkcji, 16)}'
+        for p in productions
+    ]
+
+    lines = [
+        'W systemie FirstTrack dodano nowe pierwsze produkcje.',
+        'Uzupełnij brakujące dane oraz przypisz zespoły na zbliżające się produkcje.',
+        '',
+        header,
+        '-' * len(header),
+        *rows,
+        '',
+        f'Otwórz aplikację: {settings.FIRSTTRACK_APP_URL}',
+        '',
+        '-- FirstTrack, H. & J. Brüggen KG --',
+    ]
+    body = '\n'.join(lines)
+
+    success = True
+    error_msg = ''
+    try:
+        send_mail(subject=subject, message=body,
+                  from_email=settings.DEFAULT_FROM_EMAIL,
+                  recipient_list=recipients, fail_silently=False)
+    except Exception as e:
+        success = False
+        error_msg = str(e)
+        logger.error('Błąd wysyłki maila o nowych produkcjach: %s', e)
+
+    for p in productions:
+        EmailLog.objects.create(
+            production=p, recipient=', '.join(recipients),
+            subject=subject, body=body, success=success, error_msg=error_msg,
+        )
 
 
 # ══════════════════════════════════════════════
