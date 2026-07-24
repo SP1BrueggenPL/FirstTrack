@@ -230,9 +230,6 @@ def api_user_email(request, pk):
 def api_prefill_sap(request):
     try:
         rows = json.loads(request.body)
-        if isinstance(rows, dict):
-            rows = [rows]
-        created_urls = []
         created_productions = []
         for data in rows:
             date_val = data.get('data_produkcji') or None
@@ -243,10 +240,8 @@ def api_prefill_sap(request):
                 data_produkcji=date_val,
             )
             created_productions.append(prod)
-            from django.urls import reverse
-            created_urls.append(reverse('production_detail', args=[prod.pk]))
         _notify_new_productions(created_productions)
-        return JsonResponse({'ok': True, 'redirect': created_urls[0] if len(created_urls) == 1 else '/dashboard/'})
+        return JsonResponse({'ok': True})
     except Exception as e:
         return JsonResponse({'ok': False, 'error': str(e)}, status=400)
 

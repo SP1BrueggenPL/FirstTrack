@@ -57,7 +57,7 @@
       </div>
       <div class="card-body p-0">
         {{ extracted|json_script:"extracted-data" }}
-        <div id="added-feedback" class="px-3 pt-3"></div>
+        <div id="skipped-feedback" class="px-3 pt-3"></div>
         <div id="sap-table-wrap">
           <div class="table-responsive">
             <table class="table table-sm table-hover mb-0" style="font-size:0.82rem">
@@ -78,9 +78,9 @@
                   <td>{{ row.product_name|default:"–" }}</td>
                   <td>{{ row.data_produkcji|default:"–" }}</td>
                   <td>
-                    <button class="btn btn-outline-primary btn-sm prefill-btn py-0 px-2"
-                            data-idx="{{ forloop.counter0 }}">
-                      <i class="bi bi-plus"></i>
+                    <button class="btn btn-outline-secondary btn-sm skip-row-btn py-0 px-2"
+                            data-idx="{{ forloop.counter0 }}" title="Pomiń ten wiersz">
+                      <i class="bi bi-dash-lg"></i>
                     </button>
                   </td>
                 </tr>
@@ -90,15 +90,15 @@
           </div>
           <div class="p-3 border-top d-flex gap-2 align-items-center" id="add-all-bar">
             <button class="btn btn-success btn-sm" id="add-all-btn">
-              <i class="bi bi-plus-circle me-1"></i>Dodaj wszystkie (<span id="remaining-count">{{ extracted|length }}</span>)
+              <i class="bi bi-plus-circle me-1"></i>Dodaj wszystkie (<span id="remaining-count">{{ extracted|length }}</span>) – jeden mail
             </button>
-            <small class="text-muted">lub kliknij <i class="bi bi-plus"></i> przy wybranym wierszu – zostanie dodany i zniknie z listy</small>
+            <small class="text-muted">albo kliknij <i class="bi bi-dash-lg"></i> przy wierszu, żeby go pominąć i nie dodawać</small>
           </div>
         </div>
         <div id="all-done-msg" class="p-4 text-center text-muted d-none">
-          <i class="bi bi-check-circle display-6 d-block mb-2 text-success"></i>
-          Wszystkie produkcje zostały dodane.
-          <a href="{% url 'dashboard' %}">Przejdź do dashboardu</a>
+          <i class="bi bi-info-circle display-6 d-block mb-2"></i>
+          Wszystkie wiersze zostały pominięte – nic nie zostało dodane.
+          <a href="{% url 'import_sap' %}">Wgraj nowy screenshot</a>
         </div>
       </div>
     </div>
@@ -148,53 +148,36 @@ function updateRemainingUI() {
   }
 }
 
-function showAddedFeedback(text) {
-  const box = document.getElementById('added-feedback');
+function showSkippedFeedback(text) {
+  const box = document.getElementById('skipped-feedback');
   const div = document.createElement('div');
-  div.className = 'alert alert-success alert-dismissible fade show py-1 px-2 mb-2 small';
-  div.innerHTML = '<i class="bi bi-check-circle me-1"></i>' + text +
+  div.className = 'alert alert-secondary alert-dismissible fade show py-1 px-2 mb-2 small';
+  div.innerHTML = '<i class="bi bi-dash-circle me-1"></i>' + text +
     '<button type="button" class="btn-close" style="font-size:.6rem" data-bs-dismiss="alert" aria-label="Zamknij"></button>';
   box.prepend(div);
 }
-{% endif %}
 
-document.querySelectorAll('.prefill-btn').forEach(function(btn) {
+document.querySelectorAll('.skip-row-btn').forEach(function(btn) {
   btn.addEventListener('click', function() {
     const idx = parseInt(this.dataset.idx, 10);
     const row = extractedData[idx];
-    const self = this;
-    self.disabled = true;
-    self.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-    fetch('{% url "api_prefill_sap" %}', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}'},
-      body: JSON.stringify(row),
-    }).then(r => r.json()).then(function(data) {
-      if (data.ok) {
-        remainingIndices.delete(idx);
-        showAddedFeedback('Dodano: ' + (row.product_name || row.sap_zlecenie || 'produkcja'));
-        const tr = self.closest('tr');
-        tr.style.transition = 'opacity .2s';
-        tr.style.opacity = '0';
-        setTimeout(function() {
-          tr.remove();
-          updateRemainingUI();
-        }, 200);
-      } else {
-        alert('Błąd: ' + data.error);
-        self.disabled = false;
-        self.innerHTML = '<i class="bi bi-plus"></i>';
-      }
-    });
+    remainingIndices.delete(idx);
+    showSkippedFeedback('Pominięto: ' + (row.product_name || row.sap_zlecenie || 'wiersz'));
+    const tr = this.closest('tr');
+    tr.style.transition = 'opacity .2s';
+    tr.style.opacity = '0';
+    setTimeout(function() {
+      tr.remove();
+      updateRemainingUI();
+    }, 200);
   });
 });
 
-{% if extracted %}
 document.getElementById('add-all-btn').addEventListener('click', function() {
   const rows = Array.from(remainingIndices).sort(function(a, b) { return a - b; })
     .map(function(i) { return extractedData[i]; });
   if (rows.length === 0) return;
-  if (!confirm('Dodać ' + rows.length + ' produkcji naraz?')) return;
+  if (!confirm('Dodać ' + rows.length + ' produkcji naraz? Zostanie wysłany jeden zbiorczy mail.')) return;
   const btn = this;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Dodaję…';
@@ -208,7 +191,7 @@ document.getElementById('add-all-btn').addEventListener('click', function() {
     } else {
       alert('Błąd: ' + data.error);
       btn.disabled = false;
-      btn.innerHTML = '<i class="bi bi-plus-circle me-1"></i>Dodaj wszystkie (' + rows.length + ')';
+      btn.innerHTML = '<i class="bi bi-plus-circle me-1"></i>Dodaj wszystkie (' + rows.length + ') – jeden mail';
     }
   });
 });
