@@ -311,7 +311,8 @@ class PackagingItem(models.Model):
 
 
 class EmailLog(models.Model):
-    production = models.ForeignKey(FirstProduction, on_delete=models.CASCADE, related_name='email_logs')
+    production = models.ForeignKey(FirstProduction, on_delete=models.CASCADE, related_name='email_logs',
+                                   null=True, blank=True)
     recipient  = models.CharField(max_length=200)
     subject    = models.CharField(max_length=300)
     body       = models.TextField()

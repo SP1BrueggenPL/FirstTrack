@@ -56,6 +56,7 @@
         <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>AI gotowe</span>
       </div>
       <div class="card-body p-0">
+        {{ extracted|json_script:"extracted-data" }}
         <div class="table-responsive">
           <table class="table table-sm table-hover mb-0" style="font-size:0.82rem">
             <thead class="table-light">
@@ -76,7 +77,7 @@
                 <td>{{ row.data_produkcji|default:"–" }}</td>
                 <td>
                   <button class="btn btn-outline-primary btn-sm prefill-btn py-0 px-2"
-                          data-row='{{ row|safe }}'>
+                          data-idx="{{ forloop.counter0 }}">
                     <i class="bi bi-plus"></i>
                   </button>
                 </td>
@@ -125,9 +126,13 @@ document.getElementById('sap-form').addEventListener('submit', function() {
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Przetwarzam…';
 });
 
+{% if extracted %}
+const extractedData = JSON.parse(document.getElementById('extracted-data').textContent);
+{% endif %}
+
 document.querySelectorAll('.prefill-btn').forEach(function(btn) {
   btn.addEventListener('click', function() {
-    const row = JSON.parse(this.dataset.row);
+    const row = extractedData[parseInt(this.dataset.idx, 10)];
     const self = this;
     self.disabled = true;
     self.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
@@ -149,7 +154,7 @@ document.querySelectorAll('.prefill-btn').forEach(function(btn) {
 
 {% if extracted %}
 document.getElementById('add-all-btn').addEventListener('click', function() {
-  const rows = {{ extracted|safe }};
+  const rows = extractedData;
   if (!confirm('Dodać ' + rows.length + ' produkcji naraz?')) return;
   const btn = this;
   btn.disabled = true;

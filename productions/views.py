@@ -892,9 +892,13 @@ def notification_email_list(request):
             messages.success(request, 'Adres email został dodany do stałej puli.')
             return redirect('notification_email_list')
 
+    acs_configured = bool(settings.ACS_EMAIL_CONNECTION_STRING and settings.ACS_EMAIL_SENDER_ADDRESS)
+
     return render(request, 'productions/notification_email_list.html', {
         'form': form,
         'recipients': NotificationRecipient.objects.all(),
+        'acs_configured': acs_configured,
+        'recent_logs': EmailLog.objects.select_related('production').all()[:15],
     })
 
 
@@ -904,4 +908,59 @@ def notification_email_delete(request, pk):
     recipient = get_object_or_404(NotificationRecipient, pk=pk)
     recipient.delete()
     messages.success(request, f'Adres {recipient.email} został usunięty ze stałej puli.')
+    return redirect('notification_email_list')
+
+
+@login_required
+@require_POST
+def notification_email_test(request):
+    """Wysyłka testowego maila – do zweryfikowania konfiguracji wysyłki
+    (Azure Communication Services albo plik lokalny w trybie dev)."""
+    test_email = request.POST.get('test_email', '').strip()
+    if test_email:
+        recipients = [test_email]
+    else:
+        recipients = sorted(set(
+            NotificationRecipient.objects.filter(active=True).values_list('email', flat=True)
+        ))
+
+    if not recipients:
+        messages.error(
+            request,
+            'Brak adresu do testu – wpisz adres testowy albo dodaj przynajmniej '
+            'jeden aktywny adres do stałej puli.',
+        )
+        return redirect('notification_email_list')
+
+    acs_configured = bool(settings.ACS_EMAIL_CONNECTION_STRING and settings.ACS_EMAIL_SENDER_ADDRESS)
+    subject = '[FirstTrack] Testowy mail'
+    body = '\n'.join([
+        'To jest testowy mail z systemu FirstTrack.',
+        '',
+        f'Backend wysyłki: {"Azure Communication Services" if acs_configured else "plik lokalny (tryb dev, brak danych ACS)"}',
+        '',
+        'Jeśli ten mail dotarł na skrzynkę – wysyłka działa poprawnie.',
+        '',
+        '-- FirstTrack, H. & J. Brüggen KG --',
+    ])
+
+    success = True
+    error_msg = ''
+    try:
+        send_mail(subject=subject, message=body, from_email=settings.DEFAULT_FROM_EMAIL,
+                  recipient_list=recipients, fail_silently=False)
+    except Exception as e:
+        success = False
+        error_msg = str(e)
+        logger.error('Błąd wysyłki testowego maila: %s', e)
+
+    EmailLog.objects.create(
+        production=None, recipient=', '.join(recipients),
+        subject=subject, body=body, success=success, error_msg=error_msg,
+    )
+
+    if success:
+        messages.success(request, f'Testowy mail wysłany do: {", ".join(recipients)}')
+    else:
+        messages.error(request, f'Błąd wysyłki testowego maila: {error_msg}')
     return redirect('notification_email_list')
