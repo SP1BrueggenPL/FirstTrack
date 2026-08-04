@@ -62,7 +62,7 @@
     <td class="label">CRM Projekt Nr.:</td><td>{{ production.crm_project_nr|default:"" }}</td>
   </tr>
   <tr>
-    <td class="label">Nr R&amp;D:</td><td>{{ production.rd_number|default:"" }}</td>
+    <td class="label">Nr receptury R&amp;D:</td><td>{{ production.rd_number|default:"" }}</td>
     <td class="label">Receptura powi&#x105;zana:</td><td>{{ production.recipe|default:"" }}</td>
     <td class="label">Planowany Start:</td><td>{{ production.data_produkcji|date:"d.m.Y"|default:"" }}</td>
     <td class="label">Typ A/B:</td><td>{{ production.typ_produkcji|default:"" }}</td>
@@ -219,7 +219,7 @@
     <td class="label">QA:</td><td>{% if cb %}{{ cb.confirm_qa|default:"" }}{% endif %}</td>
   </tr>
   <tr>
-    <td class="label">SDP:</td><td>{% if cb %}{{ cb.confirm_sdp|default:"" }}{% endif %}</td>
+    <td class="label">WPD:</td><td>{% if cb %}{{ cb.confirm_wpd|default:"" }}{% endif %}</td>
     <td class="label">SD:</td><td>{% if cb %}{{ cb.confirm_sd|default:"" }}{% endif %}</td>
     <td colspan="4"></td>
   </tr>

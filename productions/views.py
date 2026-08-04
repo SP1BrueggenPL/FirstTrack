@@ -23,7 +23,7 @@ from .forms import (
     FirstProductionForm, SAPImportForm,
     ChecklistBeforeForm,
     ChecklistAfterSensoryForm, ChecklistAfterPackagingForm, ChecklistAfterAcceptanceForm,
-    ChecklistAfterHeaderForm,
+    ChecklistAfterHeaderForm, LinkPackagingForm,
     SensoryParamFormSet, PackagingItemFormSet,
     UserCreateForm, UserEditForm, UserChipForm, NotificationRecipientForm,
 )
@@ -233,17 +233,28 @@ def api_prefill_sap(request):
     try:
         rows = json.loads(request.body)
         created_productions = []
+        skipped_zlecenia = []
         for data in rows:
+            sap_zlecenie = (data.get('sap_zlecenie') or '').strip()
+            # AI mogła odczytać zlecenie, które już jest w systemie - pomijamy je,
+            # żeby nie dodawać tej samej produkcji drugi raz.
+            if sap_zlecenie and FirstProduction.objects.filter(sap_zlecenie=sap_zlecenie).exists():
+                skipped_zlecenia.append(sap_zlecenie)
+                continue
             date_val = data.get('data_produkcji') or None
             prod = FirstProduction.objects.create(
-                sap_zlecenie=data.get('sap_zlecenie', ''),
+                sap_zlecenie=sap_zlecenie,
                 sap_material=data.get('sap_material', ''),
                 product_name=data.get('product_name', '') or 'Nowa produkcja',
                 data_produkcji=date_val,
             )
             created_productions.append(prod)
         _notify_new_productions(created_productions)
-        return JsonResponse({'ok': True})
+        return JsonResponse({
+            'ok': True,
+            'created': len(created_productions),
+            'skipped_existing': skipped_zlecenia,
+        })
     except Exception as e:
         return JsonResponse({'ok': False, 'error': str(e)}, status=400)
 
@@ -265,9 +276,9 @@ def production_new(request):
             'data_produkcji': prefill.get('data_produkcji', '') or None,
         }
 
-    form = FirstProductionForm(initial=initial)
+    form = FirstProductionForm(initial=initial, user=request.user)
     if request.method == 'POST':
-        form = FirstProductionForm(request.POST, request.FILES)
+        form = FirstProductionForm(request.POST, request.FILES, user=request.user)
         if form.is_valid():
             prod = form.save()
             # Auto-fill email akceptującego jeśli nie wpisano
@@ -289,9 +300,9 @@ def production_edit(request, pk):
     if prod.status == 'zwolniona':
         messages.error(request, 'Produkcja zwolniona do sprzedaży – edycja jest zablokowana.')
         return redirect('production_detail', pk=pk)
-    form = FirstProductionForm(instance=prod)
+    form = FirstProductionForm(instance=prod, user=request.user)
     if request.method == 'POST':
-        form = FirstProductionForm(request.POST, request.FILES, instance=prod)
+        form = FirstProductionForm(request.POST, request.FILES, instance=prod, user=request.user)
         if form.is_valid():
             prod = form.save()
             if prod.acceptor and not prod.acceptor_email:
@@ -314,7 +325,8 @@ def production_detail(request, pk):
     prod = get_object_or_404(
         FirstProduction.objects.select_related(
             'person_rd', 'person_sc', 'person_ql', 'person_qa',
-            'person_sd', 'person_sdp', 'person_pp', 'person_ce', 'acceptor',
+            'person_sd', 'person_wpd', 'person_pp', 'person_ce', 'person_te',
+            'acceptor', 'linked_production',
         ),
         pk=pk
     )
@@ -322,13 +334,13 @@ def production_detail(request, pk):
     if prod.status == 'zwolniona':
         edit_form = None
     elif request.method == 'POST' and 'save_basic' in request.POST:
-        edit_form = FirstProductionForm(request.POST, instance=prod)
+        edit_form = FirstProductionForm(request.POST, instance=prod, user=request.user)
         if edit_form.is_valid():
             edit_form.save()
             messages.success(request, 'Dane produkcji zaktualizowane.')
             return redirect('production_detail', pk=pk)
     else:
-        edit_form = FirstProductionForm(instance=prod)
+        edit_form = FirstProductionForm(instance=prod, user=request.user)
 
     checklist_before = getattr(prod, 'checklist_before', None)
     checklist_after  = getattr(prod, 'checklist_after',  None)
@@ -359,7 +371,7 @@ def production_detail(request, pk):
             ('PP',  checklist_before.confirm_pp),
             ('CE',  checklist_before.confirm_ce),
             ('QA',  checklist_before.confirm_qa),
-            ('SDP', checklist_before.confirm_sdp),
+            ('WPD', checklist_before.confirm_wpd),
             ('SD',  checklist_before.confirm_sd),
         ]
 
@@ -443,21 +455,30 @@ def _all_sig_fields(prod):
         ('QL',  'sig_ql',  prod.person_ql),
         ('QA',  'sig_qa',  prod.person_qa),
         ('SD',  'sig_sd',  prod.person_sd),
-        ('SDP', 'sig_sdp', prod.person_sdp),
+        ('WPD', 'sig_wpd', prod.person_wpd),
         ('PP',  'sig_pp',  prod.person_pp),
         ('CE',  'sig_ce',  prod.person_ce),
+        ('Technologia', 'sig_te', prod.person_te),
     ]
 
 
 # Etap II krok 1 – sensoryczne
 @login_required
 def checklist_after(request, pk):
+    prod = get_object_or_404(FirstProduction, pk=pk)
+    if prod.skips_sensory:
+        # Produkcja "tylko pakowanie" nie ma własnego etapu sensorycznego -
+        # sensoryka jest pomijana i nie bierze udziału w tym procesie.
+        return redirect('checklist_after_packaging', pk=pk)
     return redirect('checklist_after_sensory', pk=pk)
 
 
 @login_required
 def checklist_after_sensory(request, pk):
-    prod     = get_object_or_404(FirstProduction, pk=pk)
+    prod = get_object_or_404(FirstProduction, pk=pk)
+    if prod.skips_sensory:
+        return redirect('checklist_after_packaging', pk=pk)
+
     instance = _get_or_create_checklist_after(prod)
     sensory_fs = SensoryParamFormSet(queryset=instance.sensory_params.all(), prefix='sensory')
     form = ChecklistAfterSensoryForm(instance=instance)
@@ -470,11 +491,25 @@ def checklist_after_sensory(request, pk):
             ca.production = prod
             ca.save()
             sensory_fs.save()
-            messages.success(request, 'Parametry sensoryczne zapisane.')
             if 'next' in request.POST:
                 _send_sensory_accepted_email(prod, ca)
+                if prod.is_sensory_only:
+                    # Brak własnego etapu pakowania - sensoryka kończy Etap II
+                    # tej produkcji (pakowanie realizuje powiązane zlecenie).
+                    ca.completed_at = timezone.now()
+                    ca.save(update_fields=['completed_at'])
+                    prod.status = 'etap2'
+                    prod.save()
+                    messages.success(request, 'Parametry sensoryczne zaakceptowane. Etap II zatwierdzony.')
+                    return redirect('production_detail', pk=pk)
+                messages.success(request, 'Parametry sensoryczne zapisane.')
                 return redirect('checklist_after_packaging', pk=pk)
+            messages.success(request, 'Parametry sensoryczne zapisane.')
             return redirect('checklist_after_sensory', pk=pk)
+
+    link_form = None
+    if prod.is_sensory_only and not prod.linked_production:
+        link_form = LinkPackagingForm(production=prod)
 
     return render(request, 'productions/checklist_after_sensory.html', {
         'form': form,
@@ -482,14 +517,66 @@ def checklist_after_sensory(request, pk):
         'production': prod,
         'checklist': instance,
         'team_sig_fields': _all_sig_fields(prod),
+        'link_form': link_form,
         'step': 1,
     })
+
+
+@login_required
+@require_POST
+def link_packaging_production(request, pk):
+    """Powiąż produkcję "tylko sensoryka" ze zleceniem "tylko pakowanie" po
+    numerze zlecenia SAP - checklisty obu stron stają się widoczne wzajemnie."""
+    prod = get_object_or_404(FirstProduction, pk=pk)
+    if not prod.is_sensory_only:
+        messages.error(request, 'Powiązanie pakowni jest dostępne tylko dla produkcji „tylko sensoryka".')
+        return redirect('checklist_after_sensory', pk=pk)
+
+    form = LinkPackagingForm(request.POST, production=prod)
+    if form.is_valid():
+        packaging_prod = form.cleaned_data['packaging_production']
+        now = timezone.now()
+        prod.linked_production = packaging_prod
+        prod.linked_at = now
+        prod.linked_by = request.user
+        prod.save(update_fields=['linked_production', 'linked_at', 'linked_by'])
+        packaging_prod.linked_production = prod
+        packaging_prod.linked_at = now
+        packaging_prod.linked_by = request.user
+        packaging_prod.save(update_fields=['linked_production', 'linked_at', 'linked_by'])
+        messages.success(
+            request,
+            f'Powiązano z pakowaniem „{packaging_prod.product_name}" '
+            f'(zlecenie SAP {packaging_prod.sap_zlecenie or "–"}).',
+        )
+    else:
+        messages.error(request, 'Nie udało się powiązać - wybierz zlecenie pakowania z listy.')
+    return redirect('checklist_after_sensory', pk=pk)
+
+
+@login_required
+@require_POST
+def unlink_production(request, pk):
+    prod = get_object_or_404(FirstProduction, pk=pk)
+    other = prod.linked_production
+    if other:
+        FirstProduction.objects.filter(pk=other.pk).update(
+            linked_production=None, linked_at=None, linked_by=None)
+    prod.linked_production = None
+    prod.linked_at = None
+    prod.linked_by = None
+    prod.save(update_fields=['linked_production', 'linked_at', 'linked_by'])
+    messages.success(request, 'Powiązanie zostało usunięte.')
+    return redirect('checklist_after_sensory' if prod.is_sensory_only else 'checklist_after_packaging', pk=pk)
 
 
 # Etap II krok 2 – pakowanie
 @login_required
 def checklist_after_packaging(request, pk):
-    prod     = get_object_or_404(FirstProduction, pk=pk)
+    prod = get_object_or_404(FirstProduction, pk=pk)
+    if prod.is_sensory_only:
+        return redirect('checklist_after_sensory', pk=pk)
+
     instance = _get_or_create_checklist_after(prod)
     packaging_fs = PackagingItemFormSet(queryset=instance.packaging_items.all(), prefix='packaging')
     form = ChecklistAfterPackagingForm(instance=instance)
@@ -509,11 +596,21 @@ def checklist_after_packaging(request, pk):
                 prod.save()
             ca.save()
             packaging_fs.save()
+            # Etap pakowania nie generuje już własnego maila - jego treść
+            # trafia dodatkowo do końcowego maila ze zwolnieniem (Etap III).
             messages.success(request, 'Etap II zatwierdzony.' if 'complete' in request.POST else 'Checklista pakowania zapisana.')
             if 'complete' in request.POST:
-                _send_packaging_accepted_email(prod)
                 return redirect('production_detail', pk=pk)
             return redirect('checklist_after_packaging', pk=pk)
+
+    linked_sensory = None
+    if prod.is_packaging_only and prod.linked_production:
+        linked_ca = getattr(prod.linked_production, 'checklist_after', None)
+        linked_sensory = {
+            'production': prod.linked_production,
+            'checklist': linked_ca,
+            'sensory_params': linked_ca.sensory_params.all() if linked_ca else [],
+        }
 
     return render(request, 'productions/checklist_after_packaging.html', {
         'form': form,
@@ -521,40 +618,14 @@ def checklist_after_packaging(request, pk):
         'production': prod,
         'checklist': instance,
         'unsigned_sig_fields': unsigned,
+        'linked_sensory': linked_sensory,
         'step': 2,
     })
 
 
-# Etap II krok 3 – akceptacja SD
-@login_required
-def checklist_after_acceptance(request, pk):
-    prod     = get_object_or_404(FirstProduction, pk=pk)
-    instance = _get_or_create_checklist_after(prod)
-    form = ChecklistAfterAcceptanceForm(instance=instance)
-
-    if request.method == 'POST':
-        form = ChecklistAfterAcceptanceForm(request.POST, instance=instance)
-        if form.is_valid():
-            ca = form.save(commit=False)
-            ca.production = prod
-            if 'complete' in request.POST:
-                ca.completed_at = timezone.now()
-                prod.status = 'etap2'
-                prod.save()
-            ca.save()
-            messages.success(request, 'Etap II zatwierdzony.' if 'complete' in request.POST else 'Akceptacja zapisana.')
-            return redirect('production_detail', pk=pk)
-
-    return render(request, 'productions/checklist_after_acceptance.html', {
-        'form': form,
-        'production': prod,
-        'checklist': instance,
-        'step': 3,
-    })
-
-
 # ──────────────────────────────────────────────
-# Etap III – Akceptacja SD + Zwolnienie
+# Etap III – Decyzja SD (Akceptacja / Akceptacja warunkowa / Do korekty)
+#            oraz zwolnienie do sprzedaży
 # ──────────────────────────────────────────────
 
 @login_required
@@ -568,14 +639,33 @@ def release_production(request, pk):
         if form.is_valid():
             ca = form.save(commit=False)
             ca.production = prod
-            ca.save()
-            if 'release' in request.POST:
+            decision = ca.decision
+
+            if decision == 'correction':
+                ca.final_acceptance = False
+                ca.completed_at = None
+                ca.save()
+                stage = ca.correction_return_stage
+                if stage == 'sensory':
+                    instance.sensory_params.all().update(status='', uwagi='', korekta='', kto='', kiedy='')
+                elif stage == 'packaging':
+                    instance.packaging_items.all().update(status='', uwagi='', korekta='', kto='', kiedy='')
+                prod.status = 'etap2'
+                prod.save()
+                messages.warning(
+                    request,
+                    'Produkcja skierowana do korekty - checklista wybranego etapu '
+                    'została zresetowana, a zespół powiadomiony mailem.',
+                )
+                _send_correction_email(prod, ca)
+            else:
+                ca.final_acceptance = True
+                ca.acceptance_date = ca.acceptance_date or timezone.localdate()
+                ca.save()
                 prod.status = 'zwolniona'
                 prod.save()
                 messages.success(request, f'Produkcja „{prod.product_name}" zwolniona do sprzedaży.')
                 _send_release_email(prod, ca)
-            else:
-                messages.success(request, 'Akceptacja zapisana.')
             return redirect('production_detail', pk=pk)
 
     # podpisy zespołu do podglądu
@@ -632,7 +722,7 @@ def send_production_email(request, pk):
     # Reszta zespołu przypisanego do tej konkretnej produkcji
     team_fields = [
         'person_rd', 'person_sc', 'person_ql', 'person_qa',
-        'person_sd', 'person_sdp', 'person_pp', 'person_ce',
+        'person_sd', 'person_wpd', 'person_pp', 'person_ce', 'person_te',
     ]
     for field in team_fields:
         person = getattr(prod, field)
@@ -765,7 +855,7 @@ def _production_team_recipients(prod):
     )
     team_fields = [
         'person_rd', 'person_sc', 'person_ql', 'person_qa',
-        'person_sd', 'person_sdp', 'person_pp', 'person_ce',
+        'person_sd', 'person_wpd', 'person_pp', 'person_ce', 'person_te',
     ]
     for field in team_fields:
         person = getattr(prod, field)
@@ -844,6 +934,8 @@ def _send_sensory_accepted_email(prod, ca):
     subject = f'[FirstTrack] Sensoryka zaakceptowana – {prod.product_name}'
     body = '\n'.join([
         f'Parametry sensoryczne dla produkcji „{prod.product_name}" zostały zaakceptowane.',
+        f'Zlecenie SAP:      {prod.sap_zlecenie or "–"}',
+        f'Nr materiału SAP:  {prod.sap_material or "–"}',
         'Receptura została zatwierdzona w gronie zespołu – zgoda na przejście do pakowania.',
         '',
         'Zespół, który zaakceptował:',
@@ -854,17 +946,20 @@ def _send_sensory_accepted_email(prod, ca):
     _send_and_log(prod, subject, body, recipients)
 
 
-def _send_packaging_accepted_email(prod):
-    recipients = _production_team_recipients(prod)
-    if not recipients:
-        return
-    subject = f'[FirstTrack] Pakowanie zaakceptowane – {prod.product_name}'
-    body = '\n'.join([
+def _packaging_accepted_lines(prod, ca):
+    """Treść dawnego, samodzielnego maila o zaakceptowaniu pakowania - teraz
+    dołączana jako fragment końcowego maila ze zwolnieniem (Etap III)."""
+    signed = [
+        (role, person.get_full_name() or person.username)
+        for role, fname, person in _all_sig_fields(prod)
+        if person and getattr(ca, fname)
+    ]
+    signed_lines = [f'  {role}: {name}' for role, name in signed] or ['  (brak podpisów)']
+    return [
         f'Etap II (pakowanie) dla produkcji „{prod.product_name}" został zaakceptowany.',
-        '',
-        '-- FirstTrack, H. & J. Brüggen KG --',
-    ])
-    _send_and_log(prod, subject, body, recipients)
+        'Zespół, który zaakceptował pakowanie:',
+        *signed_lines,
+    ]
 
 
 def _send_release_email(prod, ca):
@@ -873,36 +968,69 @@ def _send_release_email(prod, ca):
         return
 
     subject = f'[FirstTrack] Zwolniona do sprzedaży – {prod.product_name}'
-    body = '\n'.join([
-        f'Zamówienie „{prod.product_name}" (zlecenie SAP {prod.sap_zlecenie or "–"}) '
-        f'zostało zwolnione do sprzedaży.',
+    body_lines = [
+        f'Zamówienie „{prod.product_name}" (zlecenie SAP {prod.sap_zlecenie or "–"}, '
+        f'nr materiału SAP {prod.sap_material or "–"}) zostało zwolnione do sprzedaży.',
+        '',
+    ]
+    if ca.decision == 'conditional':
+        body_lines += [
+            'Akceptacja warunkowa - powód:',
+            f'  {ca.conditional_comment or "–"}',
+            '',
+        ]
+    body_lines += [
+        *_packaging_accepted_lines(prod, ca),
+        '',
         f'Liczba UMK do śluzy: {ca.umk_count or "–"}',
         '',
-        'W załączniku: checklista końcowa (PDF) oraz zdjęcia z produkcji.',
+        'W załączniku: checklista końcowa (PDF) oraz zdjęcia z akceptacji.',
         '',
         '-- FirstTrack, H. & J. Brüggen KG --',
-    ])
+    ]
+    body = '\n'.join(body_lines)
 
     email = EmailMessage(subject=subject, body=body,
                          from_email=settings.DEFAULT_FROM_EMAIL, to=recipients)
     try:
-        from .pdf_views import _render_pdf, _build_team_sigs
-        cb = getattr(prod, 'checklist_before', None)
-        pdf_bytes = _render_pdf('productions/pdf/etap3.html', {
-            'production': prod, 'cb': cb, 'ca': ca,
-            'sensory': ca.sensory_params.all(),
-            'packaging': ca.packaging_items.all(),
-            'team_sigs': _build_team_sigs(prod, ca),
-        })
-        email.attach(f'PP_{prod.sap_zlecenie}_Zwolnienie.pdf', pdf_bytes, 'application/pdf')
+        from .pdf_views import _generate_pdf_etap3
+        pdf_bytes = _generate_pdf_etap3(prod, ca)
+        if pdf_bytes:
+            email.attach(f'PP_{prod.sap_zlecenie}_Zwolnienie.pdf', pdf_bytes, 'application/pdf')
+    except Exception as e:
+        logger.error('Błąd generowania PDF do maila o zwolnieniu (mail zostanie wysłany bez PDF): %s', e)
+    try:
         for field in ['photo_1', 'photo_2', 'photo_3', 'photo_4']:
             photo = getattr(ca, field)
             if photo:
                 email.attach_file(photo.path)
     except Exception as e:
-        logger.error('Błąd generowania załączników maila o zwolnieniu: %s', e)
+        logger.error('Błąd dołączania zdjęć do maila o zwolnieniu: %s', e)
 
     _send_and_log(prod, subject, body, recipients, email_message=email)
+
+
+def _send_correction_email(prod, ca):
+    """Powiadamia zespół, że SD skierowało produkcję do korekty - wskazuje
+    etap do powtórzenia i komentarz osoby akceptującej (checklista tego etapu
+    została w tym samym kroku zresetowana)."""
+    recipients = _production_team_recipients(prod)
+    if not recipients:
+        return
+    stage_label = dict(ChecklistAfter.RETURN_STAGE_CHOICES).get(ca.correction_return_stage, '–')
+    acceptor_name = prod.acceptor.get_full_name() if prod.acceptor else '–'
+    subject = f'[FirstTrack] Do korekty ({stage_label}) – {prod.product_name}'
+    body = '\n'.join([
+        f'Produkcja „{prod.product_name}" (zlecenie SAP {prod.sap_zlecenie or "–"}, '
+        f'nr materiału SAP {prod.sap_material or "–"}) została skierowana do korekty przez SD ({acceptor_name}).',
+        f'Etap do powtórzenia: {stage_label}',
+        f'Komentarz SD: {ca.correction_comment or "–"}',
+        '',
+        f'Checklista etapu „{stage_label}" została zresetowana - uzupełnij ją ponownie.',
+        '',
+        '-- FirstTrack, H. & J. Brüggen KG --',
+    ])
+    _send_and_log(prod, subject, body, recipients)
 
 
 # ══════════════════════════════════════════════

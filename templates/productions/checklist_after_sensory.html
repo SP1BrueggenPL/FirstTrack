@@ -5,18 +5,72 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
     <h4 class="mb-0"><i class="bi bi-eyedropper me-2"></i>Etap II – Parametry sensoryczne</h4>
-    <small class="text-muted">{{ production.product_name }} &nbsp;|&nbsp; Krok 1 z 2</small>
+    <small class="text-muted">
+      {{ production.product_name }}
+      {% if not production.is_sensory_only %}&nbsp;|&nbsp; Krok 1 z 2{% endif %}
+    </small>
   </div>
   <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary btn-sm">
     <i class="bi bi-arrow-left me-1"></i>Powrót
   </a>
 </div>
 
+{% if not production.is_sensory_only %}
 <!-- Pasek kroków -->
 <div class="step-indicator mb-4">
   <div class="step active"><i class="bi bi-1-circle me-1"></i>Sensoryczne</div>
   <div class="step"><i class="bi bi-2-circle me-1"></i>Pakowanie</div>
 </div>
+{% endif %}
+
+{% if production.is_sensory_only %}
+<!-- Powiązanie z pakowaniem: ta produkcja to tylko sensoryka, pakowanie
+     realizuje odrębne, powiązane po numerze zlecenia SAP zlecenie. -->
+<div class="card mb-3 {% if production.linked_production %}border-info{% else %}border-warning{% endif %}">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-box-seam me-2"></i>Pakowanie (powiązane zlecenie)</span>
+    {% if production.linked_production %}<span class="badge bg-info">Powiązano</span>{% else %}<span class="badge bg-warning text-dark">Brak powiązania</span>{% endif %}
+  </div>
+  <div class="card-body small">
+    {% if production.linked_production %}
+      <p class="mb-2">
+        Checklista pakowania jest prowadzona w powiązanym zleceniu
+        <a href="{% url 'checklist_after_packaging' production.linked_production.pk %}" class="fw-semibold">
+          {{ production.linked_production.product_name }} (zlecenie {{ production.linked_production.sap_zlecenie|default:"–" }})
+        </a>.
+        Powiązano po numerze zlecenia SAP
+        {% if production.linked_by %}przez {{ production.linked_by.get_full_name }}{% endif %}
+        {% if production.linked_at %}· {{ production.linked_at|date:"d.m.Y H:i" }}{% endif %}.
+      </p>
+      <form method="post" action="{% url 'unlink_production' production.pk %}"
+            onsubmit="return confirm('Usunąć powiązanie z pakowaniem?')">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline-danger btn-sm">
+          <i class="bi bi-link-45deg me-1"></i>Usuń powiązanie
+        </button>
+      </form>
+    {% else %}
+      <p class="text-muted mb-2">
+        Ta produkcja nie ma jeszcze powiązanego zlecenia pakowania. Wyszukaj zlecenie
+        „tylko pakowanie" po numerze SAP i powiąż je - jego checklista pakowania
+        będzie miała dostęp do tej checklisty sensorycznej (i odwrotnie).
+      </p>
+      {% if link_form %}
+      <form method="post" action="{% url 'link_packaging_production' production.pk %}" class="d-flex gap-2 align-items-start flex-wrap">
+        {% csrf_token %}
+        <div style="min-width:280px">{{ link_form.packaging_production }}</div>
+        <button type="submit" class="btn btn-success btn-sm">
+          <i class="bi bi-plus-lg me-1"></i>Dodaj pakownię
+        </button>
+      </form>
+      {% if link_form.packaging_production.field.queryset.count == 0 %}
+      <div class="text-muted small mt-2">Brak dostępnych, niepowiązanych zleceń „tylko pakowanie".</div>
+      {% endif %}
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 
 <form method="post">
   {% csrf_token %}
@@ -131,7 +185,7 @@
     <div class="card-header"><i class="bi bi-pen me-2"></i>Podpisy obecnych członków zespołu</div>
     <div class="card-body">
       {{ form.sig_rd }}{{ form.sig_sc }}{{ form.sig_ql }}{{ form.sig_qa }}
-      {{ form.sig_sd }}{{ form.sig_sdp }}{{ form.sig_pp }}{{ form.sig_ce }}
+      {{ form.sig_sd }}{{ form.sig_wpd }}{{ form.sig_pp }}{{ form.sig_ce }}{{ form.sig_te }}
       {% if team_sig_fields %}
       <div class="row g-3">
         {% for role, field_name, person in team_sig_fields %}
@@ -159,7 +213,11 @@
       <i class="bi bi-floppy me-1"></i>Zapisz roboczo
     </button>
     <button type="submit" name="next" class="btn btn-primary">
-      Dalej: Pakowanie <i class="bi bi-arrow-right ms-1"></i>
+      {% if production.is_sensory_only %}
+        Zatwierdź sensorykę <i class="bi bi-check2-circle ms-1"></i>
+      {% else %}
+        Dalej: Pakowanie <i class="bi bi-arrow-right ms-1"></i>
+      {% endif %}
     </button>
     <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary">Anuluj</a>
   </div>

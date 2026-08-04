@@ -39,18 +39,37 @@
   </div>
 
   <div class="card mb-3">
-    <div class="card-header"><i class="bi bi-person-check me-2"></i>Akceptacja SD – Zwolnienie do sprzedaży</div>
+    <div class="card-header"><i class="bi bi-person-check me-2"></i>Decyzja SD</div>
     <div class="card-body">
       <div class="row g-4 align-items-start">
-        <div class="col-md-2">
-          <label class="fw-semibold small d-block mb-1">Decyzja</label>
-          {{ form.final_acceptance }}
+        <div class="col-md-5">
+          <label class="fw-semibold small d-block mb-1">Decyzja *</label>
+          <div id="decision-radio">{{ form.decision }}</div>
+          {% if form.decision.errors %}<div class="text-danger small">{{ form.decision.errors }}</div>{% endif %}
+
+          <div id="conditional-comment-wrap" class="mt-2 d-none">
+            <label class="fw-semibold small d-block mb-1">Dlaczego akceptacja jest warunkowa? *</label>
+            {{ form.conditional_comment }}
+            {% if form.conditional_comment.errors %}<div class="text-danger small">{{ form.conditional_comment.errors }}</div>{% endif %}
+          </div>
+
+          <div id="correction-fields-wrap" class="mt-2 d-none">
+            <label class="fw-semibold small d-block mb-1">Komentarz do korekty *</label>
+            {{ form.correction_comment }}
+            {% if form.correction_comment.errors %}<div class="text-danger small">{{ form.correction_comment.errors }}</div>{% endif %}
+            <label class="fw-semibold small d-block mb-1 mt-2">Powrót do etapu *</label>
+            {{ form.correction_return_stage }}
+            {% if form.correction_return_stage.errors %}<div class="text-danger small">{{ form.correction_return_stage.errors }}</div>{% endif %}
+            <div class="form-text small">
+              Checklista wybranego etapu zostanie zresetowana, a zespół powiadomiony mailem z tym komentarzem.
+            </div>
+          </div>
         </div>
         <div class="col-md-3">
           <label class="fw-semibold small d-block mb-1">Data akceptacji</label>
           {{ form.acceptance_date }}
         </div>
-        <div class="col-md-7">
+        <div class="col-md-4">
           <label class="fw-semibold small d-block mb-1">Podpis cyfrowy SD</label>
           {{ form.acceptance_signature }}
           <div class="border rounded bg-white" style="touch-action:none; cursor:crosshair;">
@@ -91,12 +110,9 @@
     <a href="{% url 'checklist_after_packaging' production.pk %}" class="btn btn-outline-secondary">
       <i class="bi bi-arrow-left me-1"></i>Wstecz do Etapu II
     </a>
-    <button type="submit" name="save" class="btn btn-outline-primary">
-      <i class="bi bi-floppy me-1"></i>Zapisz roboczo
-    </button>
-    <button type="submit" name="release" class="btn btn-success"
-            onclick="return confirm('Na pewno zwolnić produkcję do sprzedaży?')">
-      <i class="bi bi-check2-circle me-1"></i>Zwolnij do sprzedaży
+    <button type="submit" name="save" class="btn btn-primary" id="decision-submit-btn"
+            onclick="return confirm(window.decisionConfirmMessage ? window.decisionConfirmMessage() : true)">
+      <i class="bi bi-floppy me-1"></i>Zapisz
     </button>
     <a href="{% url 'pdf_etap3' production.pk %}" class="btn btn-outline-dark ms-auto" target="_blank">
       <i class="bi bi-file-earmark-pdf me-1"></i>Pobierz PDF Etap III
@@ -149,6 +165,30 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     hiddenInput.value = '';
   });
+})();
+
+// Decyzja SD: pokazuje komentarz warunkowej akceptacji / komentarz i wybór
+// etapu powrotu przy "Do korekty" - jedna decyzja = jedna akcja po zapisie.
+(function() {
+  const radios = document.querySelectorAll('#decision-radio input[name="decision"]');
+  const conditionalWrap = document.getElementById('conditional-comment-wrap');
+  const correctionWrap  = document.getElementById('correction-fields-wrap');
+
+  function refresh() {
+    const checked = document.querySelector('#decision-radio input[name="decision"]:checked');
+    const value = checked ? checked.value : '';
+    conditionalWrap.classList.toggle('d-none', value !== 'conditional');
+    correctionWrap.classList.toggle('d-none', value !== 'correction');
+  }
+  radios.forEach(r => r.addEventListener('change', refresh));
+  refresh();
+
+  window.decisionConfirmMessage = function() {
+    const checked = document.querySelector('#decision-radio input[name="decision"]:checked');
+    const value = checked ? checked.value : '';
+    if (value === 'correction') return 'Na pewno skierować produkcję do korekty? Checklista wybranego etapu zostanie zresetowana.';
+    return 'Na pewno zapisać decyzję i zwolnić produkcję do sprzedaży?';
+  };
 })();
 </script>
 {% endblock %}
