@@ -25,11 +25,15 @@ def _render_pdf(template_name, context):
     html = render_to_string(template_name, context)
     try:
         from weasyprint import HTML
-    except ImportError as e:
-        logger.error('WeasyPrint nie jest zainstalowany - nie można wygenerować PDF: %s', e)
+    except (ImportError, OSError) as e:
+        # ImportError: pakiet weasyprint nie jest zainstalowany.
+        # OSError: pakiet jest, ale brakuje natywnej biblioteki systemowej,
+        # od której zależy (Pango/cairo/GObject) - dokładnie to zdarzyło się
+        # na Azure App Service (libgobject-2.0-0 nie było na obrazie).
+        logger.error('WeasyPrint niedostępny - nie można wygenerować PDF: %s', e)
         raise PdfGenerationError(
-            'Nie udało się wygenerować PDF: biblioteka WeasyPrint nie jest zainstalowana na serwerze. '
-            'Skontaktuj się z administratorem systemu.'
+            'Nie udało się wygenerować PDF: biblioteka WeasyPrint (lub jej zależność systemowa) '
+            'nie jest zainstalowana na serwerze. Skontaktuj się z administratorem systemu.'
         ) from e
 
     try:
