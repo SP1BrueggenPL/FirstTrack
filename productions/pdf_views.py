@@ -12,44 +12,32 @@ logger = logging.getLogger(__name__)
 
 
 class PdfGenerationError(Exception):
-    """Podnoszony, gdy PDF nie mógł zostać wygenerowany - np. pakiet
-    Playwright albo binarka Chromium nie są zainstalowane na serwerze.
-    Importujemy Playwright leniwie (dopiero tutaj, nie na poziomie modułu),
+    """Podnoszony, gdy PDF nie mógł zostać wygenerowany.
+    Importujemy WeasyPrint leniwie (dopiero tutaj, nie na poziomie modułu),
     żeby brak tej biblioteki nie wywalał całej aplikacji przy starcie, tylko
     konkretną akcję generowania PDF."""
 
 
 def _render_pdf(template_name, context):
+    """Renderuje szablon do PDF przez WeasyPrint - czysty Python, bez potrzeby
+    instalowania i utrzymywania przeglądarki (Chromium) na serwerze. Rozmiar
+    strony i marginesy są ustawiane przez CSS `@page` w samych szablonach."""
     html = render_to_string(template_name, context)
     try:
-        from playwright.sync_api import sync_playwright
+        from weasyprint import HTML
     except ImportError as e:
-        logger.error('Playwright nie jest zainstalowany - nie można wygenerować PDF: %s', e)
+        logger.error('WeasyPrint nie jest zainstalowany - nie można wygenerować PDF: %s', e)
         raise PdfGenerationError(
-            'Nie udało się wygenerować PDF: biblioteka Playwright nie jest zainstalowana na serwerze. '
+            'Nie udało się wygenerować PDF: biblioteka WeasyPrint nie jest zainstalowana na serwerze. '
             'Skontaktuj się z administratorem systemu.'
         ) from e
 
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            try:
-                page = browser.new_page()
-                page.set_content(html, wait_until='networkidle')
-                pdf = page.pdf(
-                    format='A4',
-                    landscape=True,
-                    margin={'top': '10mm', 'bottom': '10mm', 'left': '10mm', 'right': '10mm'},
-                    print_background=True,
-                )
-            finally:
-                browser.close()
-        return pdf
+        return HTML(string=html).write_pdf()
     except Exception as e:
-        logger.error('Błąd generowania PDF (Playwright/Chromium): %s', e, exc_info=True)
+        logger.error('Błąd generowania PDF (WeasyPrint): %s', e, exc_info=True)
         raise PdfGenerationError(
-            'Nie udało się wygenerować PDF: przeglądarka Chromium (Playwright) nie jest '
-            'zainstalowana na serwerze lub wystąpił błąd renderowania. Skontaktuj się z administratorem.'
+            'Nie udało się wygenerować PDF z powodu błędu renderowania. Skontaktuj się z administratorem.'
         ) from e
 
 
