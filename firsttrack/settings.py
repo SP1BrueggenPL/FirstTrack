@@ -13,7 +13,17 @@ SECRET_KEY = os.environ.get(
     'django-insecure-g_k*iqcol9rn2lmt=_tsyq=fzkemg((y34c66l)2k2u(btn1m3'
 )
 
-DEBUG = True
+# Bezpieczny domyślny wybór: DEBUG=True tylko lokalnie (brak DATABASE_URL =
+# SQLite deweloperskie), False wszędzie, gdzie skonfigurowano bazę produkcyjną
+# (Azure). Z DEBUG=True strona błędu Django pokazuje m.in. hasło do bazy
+# danych każdemu, kto trafi na wyjątek - nigdy nie może być włączone na żywym
+# środowisku. Można nadpisać zmienną DEBUG w .env / App Settings, jeśli
+# potrzeba (np. tymczasowe DEBUG=True do diagnozy - pamiętaj wyłączyć).
+_env_debug = os.environ.get('DEBUG', '').strip().lower()
+if _env_debug in ('1', 'true', 'yes', 'on', '0', 'false', 'no', 'off'):
+    DEBUG = _env_debug in ('1', 'true', 'yes', 'on')
+else:
+    DEBUG = not bool(os.environ.get('DATABASE_URL', '').strip())
 
 ALLOWED_HOSTS = ['*']
 
@@ -65,9 +75,13 @@ WSGI_APPLICATION = 'firsttrack.wsgi.application'
 # PostgreSQL if DATABASE_URL is set, e.g.
 # postgresql://user:password@host.postgres.database.azure.com/dbname?sslmode=require
 # (Azure App Service → Configuration → App settings), otherwise local SQLite.
-_DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
-if _DATABASE_URL:
-    _url = urlparse(_DATABASE_URL)
+# The raw URL (with the password embedded) is deleted right after parsing so
+# it can never end up as a module-level setting shown on a Django debug page -
+# Django's secret-value filter only hides keys matching PASSWORD/SECRET/etc.
+# by name, and a stray "_DATABASE_URL" variable doesn't match that pattern.
+_database_url = os.environ.get('DATABASE_URL', '').strip()
+if _database_url:
+    _url = urlparse(_database_url)
     _sslmode = parse_qs(_url.query).get('sslmode', ['require'])[0]
     DATABASES = {
         'default': {
@@ -80,6 +94,7 @@ if _DATABASE_URL:
             'OPTIONS': {'sslmode': _sslmode},
         }
     }
+    del _url
 else:
     DATABASES = {
         'default': {
@@ -87,6 +102,7 @@ else:
             'NAME': BASE_DIR / 'db.sqlite3',
         }
     }
+del _database_url
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
