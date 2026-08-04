@@ -5,6 +5,15 @@ from .models import (
     SensoryParam, PackagingItem, UserProfile, NotificationRecipient, DEPT_CHOICES,
 )
 
+# Pola "Szczegółowe informacje" (poza komentarzem) i "Numery" - dane podstawowe,
+# które są obowiązkiem działu R&D: jeśli osobę otwierającą edycję przypisano do
+# działu RD, te pola stają się wymagane przed zapisem. Dla innych działów zostają
+# opcjonalne (mogą, ale nie muszą ich uzupełnić).
+RD_REQUIRED_FIELDS = [
+    'data_produkcji', 'zmiany', 'layout', 'typ_produkcji',
+    'rd_number', 'recipe', 'crm_project_nr',
+]
+
 ITEM_STATUS_CHOICES = [('', '–'), ('tak', 'Tak'), ('nie', 'Nie'), ('nd', 'N/D')]
 
 
@@ -134,22 +143,23 @@ class FirstProductionForm(forms.ModelForm):
         model = FirstProduction
         fields = [
             'sap_zlecenie', 'sap_material', 'product_name',
-            'data_produkcji', 'zmiany', 'layout', 'typ_produkcji', 'komentarz',
-            'packaging_line', 'rd_number', 'recipe', 'crm_project_nr',
+            'scope', 'data_produkcji', 'zmiany', 'layout', 'typ_produkcji', 'komentarz',
+            'fert_number', 'rd_number', 'recipe', 'crm_project_nr',
             'person_rd', 'person_sc', 'person_ql', 'person_qa',
-            'person_sd', 'person_sdp', 'person_pp', 'person_ce',
+            'person_sd', 'person_wpd', 'person_pp', 'person_ce', 'person_te',
             'acceptor', 'acceptor_email',
         ]
         widgets = {
             'sap_zlecenie':   _fc('np. 11333525'),
             'sap_material':   _fc('np. 28124'),
             'product_name':   forms.TextInput(attrs={'class': 'form-control'}),
+            'scope':          forms.Select(attrs={'class': 'form-select', 'id': 'id_scope'}),
             'data_produkcji': _date('form-control'),
             'zmiany':         _fc('np. nowy indeks, new article/new line'),
             'layout':         _fc('np. BMC, ND'),
             'typ_produkcji':  _sel('form-select form-select-sm'),
             'komentarz':      forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 2}),
-            'packaging_line': _fc(),
+            'fert_number':    _fc(css='form-control form-control-sm', ph='Numer FERT'),
             'rd_number':      _fc(),
             'recipe':         _fc(),
             'crm_project_nr': _fc(),
@@ -158,21 +168,23 @@ class FirstProductionForm(forms.ModelForm):
             'person_ql':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
             'person_qa':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
             'person_sd':      forms.Select(attrs={'class': 'form-select form-select-sm person-select', 'id': 'id_person_sd'}),
-            'person_sdp':     forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
+            'person_wpd':     forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
             'person_pp':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
             'person_ce':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
+            'person_te':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
             'acceptor':       forms.Select(attrs={'class': 'form-select', 'id': 'id_acceptor'}),
             'acceptor_email': forms.EmailInput(attrs={'class': 'form-control', 'id': 'id_acceptor_email',
                                                        'placeholder': 'Auto-uzupełniany z konta'}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.user = user
         # Ogranicz listy do właściwych działów
         depts = {
             'person_rd': 'RD', 'person_sc': 'SC', 'person_ql': 'QL',
-            'person_qa': 'QA', 'person_sd': 'SD', 'person_sdp': 'SDP',
-            'person_pp': 'PP', 'person_ce': 'CE',
+            'person_qa': 'QA', 'person_sd': 'SD', 'person_wpd': 'WPD',
+            'person_pp': 'PP', 'person_ce': 'CE', 'person_te': 'TE',
         }
         for field_name, dept in depts.items():
             self.fields[field_name].queryset = (
@@ -191,6 +203,25 @@ class FirstProductionForm(forms.ModelForm):
         self.fields['acceptor'].empty_label = '– wybierz akceptującego –'
         self.fields['acceptor'].required = False
 
+        # Osoba z działu R&D musi uzupełnić wszystkie dane podstawowe (poza
+        # komentarzem) przed zapisem - dla innych działów pola zostają opcjonalne.
+        profile = getattr(user, 'profile', None) if user is not None else None
+        if profile and profile.department == 'RD':
+            for field_name in RD_REQUIRED_FIELDS:
+                self.fields[field_name].required = True
+
+    def clean_fert_number(self):
+        value = self.cleaned_data.get('fert_number', '')
+        if self.cleaned_data.get('scope') == 'packaging' and not value:
+            raise forms.ValidationError('Numer FERT jest wymagany dla produkcji „tylko pakowanie".')
+        return value
+
+    def clean_recipe(self):
+        value = self.cleaned_data.get('recipe', '')
+        if self.cleaned_data.get('scope') == 'packaging' and not value:
+            raise forms.ValidationError('Numer receptury jest wymagany dla produkcji „tylko pakowanie".')
+        return value
+
     def _user_label(self, user):
         return user.get_full_name() or user.username
 
@@ -201,6 +232,26 @@ class SAPImportForm(forms.Form):
         help_text='Obsługiwane: JPG, PNG, BMP, WEBP',
         widget=forms.FileInput(attrs={'class': 'form-control', 'accept': 'image/*'}),
     )
+
+
+# ──────────────────────────────────────────────────────────
+# Powiązanie: sensoryka (produkcja) ↔ pakowanie
+# ──────────────────────────────────────────────────────────
+
+class LinkPackagingForm(forms.Form):
+    packaging_production = forms.ModelChoiceField(
+        queryset=FirstProduction.objects.none(),
+        label='Zlecenie pakowania do powiązania',
+        empty_label='– wyszukaj zlecenie tylko pakowania –',
+        widget=forms.Select(attrs={'class': 'form-select', 'id': 'id_packaging_production'}),
+    )
+
+    def __init__(self, *args, production=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        qs = FirstProduction.objects.filter(scope='packaging', linked_production__isnull=True)
+        if production is not None:
+            qs = qs.exclude(pk=production.pk)
+        self.fields['packaging_production'].queryset = qs.order_by('-created_at')
 
 
 # ──────────────────────────────────────────────────────────
@@ -250,7 +301,7 @@ class ChecklistBeforeForm(forms.ModelForm):
             'confirm_pp':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
             'confirm_ce':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
             'confirm_qa':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
-            'confirm_sdp': forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
+            'confirm_wpd': forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
             'confirm_sd':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
         }
 
@@ -265,9 +316,10 @@ _SIG_WIDGETS = {
     'sig_ql':  forms.HiddenInput(),
     'sig_qa':  forms.HiddenInput(),
     'sig_sd':  forms.HiddenInput(),
-    'sig_sdp': forms.HiddenInput(),
+    'sig_wpd': forms.HiddenInput(),
     'sig_pp':  forms.HiddenInput(),
     'sig_ce':  forms.HiddenInput(),
+    'sig_te':  forms.HiddenInput(),
 }
 
 # Krok 1 – parametry sensoryczne
@@ -286,7 +338,7 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
             'sample_start', 'sample_middle', 'sample_end',
             'comparison_benchmark', 'comparison_lab', 'comparison_reference',
             'yield_kg', 'yield_takty', 'uwagi',
-            'sig_rd', 'sig_sc', 'sig_ql', 'sig_qa', 'sig_sd', 'sig_sdp', 'sig_pp', 'sig_ce',
+            'sig_rd', 'sig_sc', 'sig_ql', 'sig_qa', 'sig_sd', 'sig_wpd', 'sig_pp', 'sig_ce', 'sig_te',
         ]
         widgets = {
             **_SIG_WIDGETS,
@@ -302,7 +354,7 @@ class ChecklistAfterPackagingForm(forms.ModelForm):
     class Meta:
         model = ChecklistAfter
         fields = [
-            'sig_rd', 'sig_sc', 'sig_ql', 'sig_qa', 'sig_sd', 'sig_sdp', 'sig_pp', 'sig_ce',
+            'sig_rd', 'sig_sc', 'sig_ql', 'sig_qa', 'sig_sd', 'sig_wpd', 'sig_pp', 'sig_ce', 'sig_te',
             'photo_1', 'photo_2', 'photo_3', 'photo_4', 'umk_count',
         ]
         widgets = {
@@ -315,24 +367,48 @@ class ChecklistAfterPackagingForm(forms.ModelForm):
         }
 
 
-# Krok 3 – akceptacja SD
+# Krok 3 – decyzja SD / zwolnienie
 class ChecklistAfterAcceptanceForm(forms.ModelForm):
+    decision = forms.ChoiceField(
+        choices=ChecklistAfter.DECISION_CHOICES,
+        label='Decyzja',
+        widget=forms.RadioSelect(attrs={'class': 'decision-radio', 'id': 'id_decision'}),
+    )
+
     class Meta:
         model = ChecklistAfter
         fields = [
             'photo_1', 'photo_2', 'photo_3', 'photo_4', 'umk_count',
-            'final_acceptance', 'acceptance_date', 'acceptance_signature',
+            'decision', 'conditional_comment',
+            'correction_comment', 'correction_return_stage',
+            'acceptance_date', 'acceptance_signature',
         ]
         widgets = {
             'acceptance_signature': forms.HiddenInput(),
             'acceptance_date':      forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date', 'class': 'form-control'}),
-            'final_acceptance':     forms.NullBooleanSelect(attrs={'class': 'form-select'}),
+            'conditional_comment':  forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 2,
+                                                            'placeholder': 'Dlaczego akceptacja jest warunkowa?'}),
+            'correction_comment':   forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 2,
+                                                            'placeholder': 'Co należy poprawić?'}),
+            'correction_return_stage': forms.Select(attrs={'class': 'form-select form-select-sm'}),
             'umk_count': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Liczba UMK'}),
             'photo_1': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),
             'photo_2': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),
             'photo_3': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),
             'photo_4': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),
         }
+
+    def clean(self):
+        cleaned = super().clean()
+        decision = cleaned.get('decision')
+        if decision == 'conditional' and not cleaned.get('conditional_comment'):
+            self.add_error('conditional_comment', 'Podaj powód akceptacji warunkowej.')
+        if decision == 'correction':
+            if not cleaned.get('correction_comment'):
+                self.add_error('correction_comment', 'Podaj komentarz do korekty.')
+            if not cleaned.get('correction_return_stage'):
+                self.add_error('correction_return_stage', 'Wybierz etap powrotu.')
+        return cleaned
 
 
 # zachowane dla kompatybilności wstecznej (używane w widoku checklist_after)

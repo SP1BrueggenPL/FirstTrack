@@ -71,9 +71,12 @@
   </tr>
   <tr>
     <td class="label">SD:</td><td>{% if ca and ca.person_sd %}{{ ca.person_sd }}{% else %}{{ production.person_sd.get_full_name|default:"" }}{% endif %}</td>
-    <td class="label">SDP:</td><td>{% if ca and ca.person_sdp %}{{ ca.person_sdp }}{% else %}{{ production.person_sdp.get_full_name|default:"" }}{% endif %}</td>
+    <td class="label">WPD:</td><td>{% if ca and ca.person_wpd %}{{ ca.person_wpd }}{% else %}{{ production.person_wpd.get_full_name|default:"" }}{% endif %}</td>
     <td class="label">PP:</td><td>{% if ca and ca.person_pp %}{{ ca.person_pp }}{% else %}{{ production.person_pp.get_full_name|default:"" }}{% endif %}</td>
     <td class="label">CE:</td><td>{% if ca and ca.person_ce %}{{ ca.person_ce }}{% else %}{{ production.person_ce.get_full_name|default:"" }}{% endif %}</td>
+  </tr>
+  <tr>
+    <td class="label">Technologia:</td><td colspan="7">{% if ca and ca.person_te %}{{ ca.person_te }}{% else %}{{ production.person_te.get_full_name|default:"" }}{% endif %}</td>
   </tr>
   <tr>
     <td class="label">Ocena próbki wzorcowej (pobranie):</td>
@@ -158,21 +161,22 @@
   </tr>
 </table>
 
-{% if ca %}{% with sig_rd=ca.sig_rd sig_sc=ca.sig_sc sig_ql=ca.sig_ql sig_qa=ca.sig_qa sig_sd=ca.sig_sd sig_sdp=ca.sig_sdp sig_pp=ca.sig_pp sig_ce=ca.sig_ce %}
-{% if sig_rd or sig_sc or sig_ql or sig_qa or sig_sd or sig_sdp or sig_pp or sig_ce %}
+{% if ca %}{% with sig_rd=ca.sig_rd sig_sc=ca.sig_sc sig_ql=ca.sig_ql sig_qa=ca.sig_qa sig_sd=ca.sig_sd sig_wpd=ca.sig_wpd sig_pp=ca.sig_pp sig_ce=ca.sig_ce sig_te=ca.sig_te %}
+{% if sig_rd or sig_sc or sig_ql or sig_qa or sig_sd or sig_wpd or sig_pp or sig_ce or sig_te %}
 <table class="info-grid" style="margin-bottom:5px;">
   <tr>
-    <td colspan="8" style="background:var(--light-bg);font-weight:bold;padding:2px 4px;">Podpisy zespołu:</td>
+    <td colspan="9" style="background:var(--light-bg);font-weight:bold;padding:2px 4px;">Podpisy zespołu:</td>
   </tr>
   <tr style="height:48px;vertical-align:bottom;">
-    {% if sig_rd %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_rd }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">R&amp;D – {{ ca.person_rd }}</div></td>{% endif %}
-    {% if sig_sc %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_sc }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">SC – {{ ca.person_sc }}</div></td>{% endif %}
-    {% if sig_ql %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_ql }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">QL – {{ ca.person_ql }}</div></td>{% endif %}
-    {% if sig_qa %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_qa }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">QA – {{ ca.person_qa }}</div></td>{% endif %}
-    {% if sig_sd %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_sd }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">SD – {{ ca.person_sd }}</div></td>{% endif %}
-    {% if sig_sdp %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_sdp }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">SDP – {{ ca.person_sdp }}</div></td>{% endif %}
-    {% if sig_pp %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_pp }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">PP – {{ ca.person_pp }}</div></td>{% endif %}
-    {% if sig_ce %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_ce }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">CE – {{ ca.person_ce }}</div></td>{% endif %}
+    {% if sig_rd %}<td style="text-align:center;width:11.11%;border:1px solid #000;padding:2px;"><img src="{{ sig_rd }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">R&amp;D – {{ ca.person_rd }}</div></td>{% endif %}
+    {% if sig_sc %}<td style="text-align:center;width:11.11%;border:1px solid #000;padding:2px;"><img src="{{ sig_sc }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">SC – {{ ca.person_sc }}</div></td>{% endif %}
+    {% if sig_ql %}<td style="text-align:center;width:11.11%;border:1px solid #000;padding:2px;"><img src="{{ sig_ql }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">QL – {{ ca.person_ql }}</div></td>{% endif %}
+    {% if sig_qa %}<td style="text-align:center;width:11.11%;border:1px solid #000;padding:2px;"><img src="{{ sig_qa }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">QA – {{ ca.person_qa }}</div></td>{% endif %}
+    {% if sig_sd %}<td style="text-align:center;width:11.11%;border:1px solid #000;padding:2px;"><img src="{{ sig_sd }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">SD – {{ ca.person_sd }}</div></td>{% endif %}
+    {% if sig_wpd %}<td style="text-align:center;width:11.11%;border:1px solid #000;padding:2px;"><img src="{{ sig_wpd }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">WPD – {{ ca.person_wpd }}</div></td>{% endif %}
+    {% if sig_pp %}<td style="text-align:center;width:11.11%;border:1px solid #000;padding:2px;"><img src="{{ sig_pp }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">PP – {{ ca.person_pp }}</div></td>{% endif %}
+    {% if sig_ce %}<td style="text-align:center;width:11.11%;border:1px solid #000;padding:2px;"><img src="{{ sig_ce }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">CE – {{ ca.person_ce }}</div></td>{% endif %}
+    {% if sig_te %}<td style="text-align:center;width:11.11%;border:1px solid #000;padding:2px;"><img src="{{ sig_te }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">Techn. – {{ ca.person_te }}</div></td>{% endif %}
   </tr>
 </table>
 {% endif %}{% endwith %}{% endif %}

@@ -5,18 +5,77 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
     <h4 class="mb-0"><i class="bi bi-box me-2"></i>Etap II – Pakowanie</h4>
-    <small class="text-muted">{{ production.product_name }} &nbsp;|&nbsp; Krok 2 z 2</small>
+    <small class="text-muted">
+      {{ production.product_name }}
+      {% if not production.is_packaging_only %}&nbsp;|&nbsp; Krok 2 z 2{% endif %}
+    </small>
   </div>
   <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary btn-sm">
     <i class="bi bi-arrow-left me-1"></i>Powrót
   </a>
 </div>
 
+{% if not production.is_packaging_only %}
 <!-- Pasek kroków -->
 <div class="step-indicator mb-4">
   <div class="step done"><i class="bi bi-check-circle me-1"></i>Sensoryczne</div>
   <div class="step active"><i class="bi bi-2-circle me-1"></i>Pakowanie</div>
 </div>
+{% endif %}
+
+{% if production.is_packaging_only %}
+<div class="card mb-3 {% if linked_sensory %}border-info{% else %}border-warning{% endif %}">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-eyedropper me-2"></i>Sensoryka (powiązane zlecenie)</span>
+    {% if linked_sensory %}<span class="badge bg-info">Powiązano</span>{% else %}<span class="badge bg-warning text-dark">Brak powiązania</span>{% endif %}
+  </div>
+  <div class="card-body small">
+    {% if linked_sensory %}
+      <p class="mb-2">
+        Checklista sensoryczna powiązanej produkcji
+        <a href="{% url 'checklist_after_sensory' linked_sensory.production.pk %}" class="fw-semibold">
+          {{ linked_sensory.production.product_name }} (zlecenie {{ linked_sensory.production.sap_zlecenie|default:"–" }})
+        </a>:
+      </p>
+      {% if linked_sensory.checklist %}
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Parametr</th><th>Status</th><th>Uwagi</th></tr></thead>
+          <tbody>
+            {% for s in linked_sensory.sensory_params %}
+            <tr>
+              <td>{{ s.get_param_display }}</td>
+              <td>
+                {% if s.status == 'tak' %}<span class="text-success fw-bold">TAK</span>
+                {% elif s.status == 'nie' %}<span class="text-danger fw-bold">NIE</span>
+                {% elif s.status == 'nd' %}<span class="text-muted">N/D</span>
+                {% else %}<span class="text-muted">–</span>{% endif %}
+              </td>
+              <td>{{ s.uwagi|default:"–" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-muted mb-0">Powiązana produkcja jeszcze nie ma wypełnionej checklisty sensorycznej.</p>
+      {% endif %}
+      <form method="post" action="{% url 'unlink_production' production.pk %}" class="mt-2"
+            onsubmit="return confirm('Usunąć powiązanie z sensoryką?')">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline-danger btn-sm">
+          <i class="bi bi-link-45deg me-1"></i>Usuń powiązanie
+        </button>
+      </form>
+    {% else %}
+      <p class="text-muted mb-0">
+        To zlecenie nie jest jeszcze powiązane z produkcją sensoryczną. Powiązanie
+        dodaje się ze strony produkcji „tylko sensoryka" (przycisk „Dodaj pakownię").
+      </p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 
 <form method="post" enctype="multipart/form-data">
   {% csrf_token %}
@@ -61,7 +120,7 @@
     <div class="card-header"><i class="bi bi-pen me-2"></i>Podpisy – osoby które jeszcze się nie podpisały</div>
     <div class="card-body">
       {{ form.sig_rd }}{{ form.sig_sc }}{{ form.sig_ql }}{{ form.sig_qa }}
-      {{ form.sig_sd }}{{ form.sig_sdp }}{{ form.sig_pp }}{{ form.sig_ce }}
+      {{ form.sig_sd }}{{ form.sig_wpd }}{{ form.sig_pp }}{{ form.sig_ce }}{{ form.sig_te }}
       {% if unsigned_sig_fields %}
       <div class="row g-3">
         {% for role, field_name, person in unsigned_sig_fields %}
@@ -83,9 +142,11 @@
   </div>
 
   <div class="d-flex gap-2">
+    {% if not production.is_packaging_only %}
     <a href="{% url 'checklist_after_sensory' production.pk %}" class="btn btn-outline-secondary">
       <i class="bi bi-arrow-left me-1"></i>Wstecz
     </a>
+    {% endif %}
     <button type="submit" name="save" class="btn btn-outline-primary">
       <i class="bi bi-floppy me-1"></i>Zapisz roboczo
     </button>

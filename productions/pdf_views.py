@@ -1,27 +1,56 @@
-import os
-from django.http import HttpResponse
-from django.shortcuts import get_object_or_404
-from django.template.loader import render_to_string
+import logging
+
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from playwright.sync_api import sync_playwright
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404, redirect
+from django.template.loader import render_to_string
 
 from .models import FirstProduction
+
+logger = logging.getLogger(__name__)
+
+
+class PdfGenerationError(Exception):
+    """Podnoszony, gdy PDF nie mógł zostać wygenerowany - np. pakiet
+    Playwright albo binarka Chromium nie są zainstalowane na serwerze.
+    Importujemy Playwright leniwie (dopiero tutaj, nie na poziomie modułu),
+    żeby brak tej biblioteki nie wywalał całej aplikacji przy starcie, tylko
+    konkretną akcję generowania PDF."""
 
 
 def _render_pdf(template_name, context):
     html = render_to_string(template_name, context)
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page()
-        page.set_content(html, wait_until='networkidle')
-        pdf = page.pdf(
-            format='A4',
-            landscape=True,
-            margin={'top': '10mm', 'bottom': '10mm', 'left': '10mm', 'right': '10mm'},
-            print_background=True,
-        )
-        browser.close()
-    return pdf
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as e:
+        logger.error('Playwright nie jest zainstalowany - nie można wygenerować PDF: %s', e)
+        raise PdfGenerationError(
+            'Nie udało się wygenerować PDF: biblioteka Playwright nie jest zainstalowana na serwerze. '
+            'Skontaktuj się z administratorem systemu.'
+        ) from e
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            try:
+                page = browser.new_page()
+                page.set_content(html, wait_until='networkidle')
+                pdf = page.pdf(
+                    format='A4',
+                    landscape=True,
+                    margin={'top': '10mm', 'bottom': '10mm', 'left': '10mm', 'right': '10mm'},
+                    print_background=True,
+                )
+            finally:
+                browser.close()
+        return pdf
+    except Exception as e:
+        logger.error('Błąd generowania PDF (Playwright/Chromium): %s', e, exc_info=True)
+        raise PdfGenerationError(
+            'Nie udało się wygenerować PDF: przeglądarka Chromium (Playwright) nie jest '
+            'zainstalowana na serwerze lub wystąpił błąd renderowania. Skontaktuj się z administratorem.'
+        ) from e
 
 
 def _build_team_sigs(prod, ca):
@@ -32,9 +61,10 @@ def _build_team_sigs(prod, ca):
         ('QL',  'sig_ql', prod.person_ql),
         ('QA',  'sig_qa', prod.person_qa),
         ('SD',  'sig_sd', prod.person_sd),
-        ('SDP', 'sig_sdp', prod.person_sdp),
+        ('WPD', 'sig_wpd', prod.person_wpd),
         ('PP',  'sig_pp', prod.person_pp),
         ('CE',  'sig_ce', prod.person_ce),
+        ('Technologia', 'sig_te', prod.person_te),
     ]:
         sig = getattr(ca, fname, '')
         if person and sig:
@@ -42,12 +72,27 @@ def _build_team_sigs(prod, ca):
     return sigs
 
 
+def _generate_pdf_etap3(prod, ca):
+    """Używane też przy wysyłce maila ze zwolnieniem (załącznik PDF)."""
+    cb = getattr(prod, 'checklist_before', None)
+    return _render_pdf('productions/pdf/etap3.html', {
+        'production': prod, 'cb': cb, 'ca': ca,
+        'sensory': ca.sensory_params.all(),
+        'packaging': ca.packaging_items.all(),
+        'team_sigs': _build_team_sigs(prod, ca),
+    })
+
+
 @login_required
 def pdf_etap1(request, pk):
     prod = get_object_or_404(FirstProduction, pk=pk)
     cb = getattr(prod, 'checklist_before', None)
     context = {'production': prod, 'cb': cb}
-    pdf = _render_pdf('productions/pdf/etap1.html', context)
+    try:
+        pdf = _render_pdf('productions/pdf/etap1.html', context)
+    except PdfGenerationError as e:
+        messages.error(request, str(e))
+        return redirect('production_detail', pk=pk)
     response = HttpResponse(pdf, content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="PP_{prod.sap_zlecenie}_Etap1.pdf"'
     return response
@@ -63,7 +108,11 @@ def pdf_etap2(request, pk):
         'packaging': ca.packaging_items.all() if ca else [],
         'team_sigs': _build_team_sigs(prod, ca) if ca else [],
     }
-    pdf = _render_pdf('productions/pdf/etap2.html', context)
+    try:
+        pdf = _render_pdf('productions/pdf/etap2.html', context)
+    except PdfGenerationError as e:
+        messages.error(request, str(e))
+        return redirect('production_detail', pk=pk)
     response = HttpResponse(pdf, content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="PP_{prod.sap_zlecenie}_Etap2.pdf"'
     return response
@@ -72,15 +121,18 @@ def pdf_etap2(request, pk):
 @login_required
 def pdf_etap3(request, pk):
     prod = get_object_or_404(FirstProduction, pk=pk)
-    cb = getattr(prod, 'checklist_before', None)
     ca = getattr(prod, 'checklist_after', None)
-    context = {
-        'production': prod, 'cb': cb, 'ca': ca,
-        'sensory': ca.sensory_params.all() if ca else [],
-        'packaging': ca.packaging_items.all() if ca else [],
-        'team_sigs': _build_team_sigs(prod, ca) if ca else [],
-    }
-    pdf = _render_pdf('productions/pdf/etap3.html', context)
+    try:
+        if ca:
+            pdf = _generate_pdf_etap3(prod, ca)
+        else:
+            cb = getattr(prod, 'checklist_before', None)
+            pdf = _render_pdf('productions/pdf/etap3.html', {
+                'production': prod, 'cb': cb, 'ca': None, 'sensory': [], 'packaging': [], 'team_sigs': [],
+            })
+    except PdfGenerationError as e:
+        messages.error(request, str(e))
+        return redirect('production_detail', pk=pk)
     response = HttpResponse(pdf, content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="PP_{prod.sap_zlecenie}_Zwolnienie.pdf"'
     return response

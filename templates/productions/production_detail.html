@@ -11,6 +11,7 @@
       {% if production.typ_produkcji %}
         &nbsp;|&nbsp; Typ: <span class="badge bg-info text-dark">{{ production.typ_produkcji }}</span>
       {% endif %}
+      &nbsp;|&nbsp; <span class="badge bg-secondary">{{ production.get_scope_display }}</span>
     </small>
   </div>
   <div class="d-flex gap-2">
@@ -83,26 +84,53 @@
           <tr><td class="text-muted ps-3">Layout</td><td>{{ production.layout|default:"–" }}</td></tr>
           <tr><td class="text-muted ps-3">Zmiany</td><td>{{ production.zmiany|default:"–" }}</td></tr>
           {% if production.komentarz %}<tr><td class="text-muted ps-3">Komentarz</td><td class="fst-italic">{{ production.komentarz }}</td></tr>{% endif %}
+          {% if production.fert_number %}<tr><td class="text-muted ps-3">Numer FERT</td><td>{{ production.fert_number }}</td></tr>{% endif %}
           {% if production.packaging_line %}<tr><td class="text-muted ps-3">Linia pak.</td><td>{{ production.packaging_line }}</td></tr>{% endif %}
           {% if production.recipe %}<tr><td class="text-muted ps-3">Receptura</td><td>{{ production.recipe }}</td></tr>{% endif %}
         </table>
       </div>
     </div>
 
+    {% if production.linked_production %}
+    <div class="card mb-3 border-info">
+      <div class="card-header bg-info-subtle"><i class="bi bi-link-45deg me-2"></i>Powiązana produkcja</div>
+      <div class="card-body p-2 small">
+        <p class="mb-1">
+          {% if production.is_sensory_only %}
+            Ta produkcja (tylko sensoryka) jest powiązana ze zleceniem pakowania:
+          {% else %}
+            To zlecenie (tylko pakowanie) jest powiązane z produkcją sensoryczną:
+          {% endif %}
+        </p>
+        <a href="{% url 'production_detail' production.linked_production.pk %}" class="fw-semibold">
+          {{ production.linked_production.product_name }}
+          (zlecenie {{ production.linked_production.sap_zlecenie|default:"–" }})
+        </a>
+        <div class="text-muted mt-1">
+          Powiązano po numerze zlecenia SAP
+          {% if production.linked_by %}przez {{ production.linked_by.get_full_name }}{% endif %}
+          {% if production.linked_at %} · {{ production.linked_at|date:"d.m.Y H:i" }}{% endif %}.
+          Checklista sensoryczna jest widoczna w zleceniu pakowania i odwrotnie.
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="card mb-3">
       <div class="card-header"><i class="bi bi-people me-2"></i>Zespół</div>
       <div class="card-body p-0">
-        {% with rd=production.person_rd sc=production.person_sc ql=production.person_ql qa=production.person_qa sd=production.person_sd sdp=production.person_sdp pp=production.person_pp ce=production.person_ce %}
-        {% if rd or sc or ql or qa or sd or sdp or pp or ce %}
+        {% with rd=production.person_rd sc=production.person_sc ql=production.person_ql qa=production.person_qa sd=production.person_sd wpd=production.person_wpd pp=production.person_pp ce=production.person_ce te=production.person_te %}
+        {% if rd or sc or ql or qa or sd or wpd or pp or ce or te %}
         <table class="table table-sm table-borderless mb-0 small">
           {% if rd %}<tr><td class="text-muted ps-3" style="width:45px">R&amp;D</td><td>{{ rd.get_full_name }}</td></tr>{% endif %}
           {% if sc %}<tr><td class="text-muted ps-3">SC</td><td>{{ sc.get_full_name }}</td></tr>{% endif %}
           {% if ql %}<tr><td class="text-muted ps-3">QL</td><td>{{ ql.get_full_name }}</td></tr>{% endif %}
           {% if qa %}<tr><td class="text-muted ps-3">QA</td><td>{{ qa.get_full_name }}</td></tr>{% endif %}
           {% if sd %}<tr><td class="text-muted ps-3">SD</td><td>{{ sd.get_full_name }}</td></tr>{% endif %}
-          {% if sdp %}<tr><td class="text-muted ps-3">SDP</td><td>{{ sdp.get_full_name }}</td></tr>{% endif %}
+          {% if wpd %}<tr><td class="text-muted ps-3">WPD</td><td>{{ wpd.get_full_name }}</td></tr>{% endif %}
           {% if pp %}<tr><td class="text-muted ps-3">PP</td><td>{{ pp.get_full_name }}</td></tr>{% endif %}
           {% if ce %}<tr><td class="text-muted ps-3">CE</td><td>{{ ce.get_full_name }}</td></tr>{% endif %}
+          {% if te %}<tr><td class="text-muted ps-3">Techn.</td><td>{{ te.get_full_name }}</td></tr>{% endif %}
         </table>
         {% else %}
         <div class="px-3 py-2 small text-muted fst-italic">
@@ -231,12 +259,20 @@
           {% endif %}
         </div>
         <div class="d-flex gap-2 flex-wrap">
+          {% if production.scope != 'packaging' %}
           <a href="{% url 'checklist_after_sensory' production.pk %}" class="btn btn-primary btn-sm">
             <i class="bi bi-eyedropper me-1"></i>Sensoryczne
           </a>
+          {% endif %}
+          {% if production.scope != 'sensory' %}
           <a href="{% url 'checklist_after_packaging' production.pk %}" class="btn btn-outline-primary btn-sm">
             <i class="bi bi-box me-1"></i>Pakowanie
           </a>
+          {% elif production.linked_production %}
+          <a href="{% url 'checklist_after_packaging' production.linked_production.pk %}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-box-arrow-up-right me-1"></i>Pakowanie (powiązane zlecenie)
+          </a>
+          {% endif %}
           {% if checklist_after %}
           <a href="{% url 'pdf_etap2' production.pk %}" class="btn btn-outline-secondary btn-sm" target="_blank">
             <i class="bi bi-file-earmark-pdf me-1"></i>PDF

@@ -45,20 +45,46 @@
     <div class="card-header"><i class="bi bi-calendar3 me-2"></i>Szczegółowe informacje</div>
     <div class="card-body">
       <div class="row g-2">
+        <div class="col-md-4">
+          <label class="form-label fw-semibold small">
+            Zakres produkcji{% if form.scope.field.required %} *{% endif %}
+          </label>
+          {{ form.scope }}
+          <div class="form-text small">
+            Decyduje, czy w Etapie II bierze udział sensoryka, pakowanie, czy obie części.
+          </div>
+        </div>
+        <div class="col-md-3" id="fert-number-wrap">
+          <label class="form-label fw-semibold small">
+            Numer FERT{% if form.fert_number.field.required %} *{% endif %}
+          </label>
+          {{ form.fert_number }}
+          {% if form.fert_number.errors %}<div class="text-danger small">{{ form.fert_number.errors }}</div>{% endif %}
+        </div>
+      </div>
+      <div class="row g-2 mt-2">
         <div class="col-md-3">
-          <label class="form-label fw-semibold small">Data produkcji</label>
+          <label class="form-label fw-semibold small">
+            Data produkcji{% if form.data_produkcji.field.required %} *{% endif %}
+          </label>
           {{ form.data_produkcji }}
         </div>
         <div class="col-md-2">
-          <label class="form-label fw-semibold small">Typ A/B</label>
+          <label class="form-label fw-semibold small">
+            Typ A/B{% if form.typ_produkcji.field.required %} *{% endif %}
+          </label>
           {{ form.typ_produkcji }}
         </div>
         <div class="col-md-3">
-          <label class="form-label fw-semibold small">Layout</label>
+          <label class="form-label fw-semibold small">
+            Layout{% if form.layout.field.required %} *{% endif %}
+          </label>
           {{ form.layout }}
         </div>
         <div class="col-md-4">
-          <label class="form-label fw-semibold small">Zmiany</label>
+          <label class="form-label fw-semibold small">
+            Zmiany{% if form.zmiany.field.required %} *{% endif %}
+          </label>
           {{ form.zmiany }}
         </div>
         <div class="col-12">
@@ -69,25 +95,28 @@
     </div>
   </div>
 
-  <!-- Linia i numery -->
+  <!-- Numery -->
   <div class="card mb-3">
-    <div class="card-header"><i class="bi bi-box-seam me-2"></i>Linia i numery</div>
+    <div class="card-header"><i class="bi bi-box-seam me-2"></i>Numery</div>
     <div class="card-body">
       <div class="row g-2">
         <div class="col-md-3">
-          <label class="form-label fw-semibold small">Linia pakująca</label>
-          {{ form.packaging_line }}
-        </div>
-        <div class="col-md-2">
-          <label class="form-label fw-semibold small">Nr R&amp;D</label>
+          <label class="form-label fw-semibold small">
+            Nr receptury R&amp;D{% if form.rd_number.field.required %} *{% endif %}
+          </label>
           {{ form.rd_number }}
         </div>
         <div class="col-md-3">
-          <label class="form-label fw-semibold small">Receptura powiązana</label>
+          <label class="form-label fw-semibold small">
+            Receptura powiązana{% if form.recipe.field.required %} *{% endif %}
+          </label>
           {{ form.recipe }}
+          {% if form.recipe.errors %}<div class="text-danger small">{{ form.recipe.errors }}</div>{% endif %}
         </div>
         <div class="col-md-4">
-          <label class="form-label fw-semibold small">CRM Projekt Nr.</label>
+          <label class="form-label fw-semibold small">
+            CRM Projekt Nr.{% if form.crm_project_nr.field.required %} *{% endif %}
+          </label>
           {{ form.crm_project_nr }}
         </div>
       </div>
@@ -115,13 +144,16 @@
           <label class="form-label fw-semibold small">SD</label>{{ form.person_sd }}
         </div>
         <div class="col-md-3">
-          <label class="form-label fw-semibold small">SDP</label>{{ form.person_sdp }}
+          <label class="form-label fw-semibold small">WPD</label>{{ form.person_wpd }}
         </div>
         <div class="col-md-3">
           <label class="form-label fw-semibold small">PP</label>{{ form.person_pp }}
         </div>
         <div class="col-md-3">
           <label class="form-label fw-semibold small">CE</label>{{ form.person_ce }}
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold small">Technologia</label>{{ form.person_te }}
         </div>
       </div>
     </div>
@@ -179,6 +211,18 @@ if (acceptorSelect) {
       .then(r => r.json())
       .then(data => { if (data.email) emailField.value = data.email; });
   });
+}
+
+// Numer FERT jest istotny tylko dla produkcji "tylko pakowanie"
+const scopeSelect  = document.getElementById('id_scope');
+const fertWrap      = document.getElementById('fert-number-wrap');
+function toggleFertVisibility() {
+  if (!scopeSelect || !fertWrap) return;
+  fertWrap.style.display = (scopeSelect.value === 'packaging') ? '' : 'none';
+}
+if (scopeSelect) {
+  scopeSelect.addEventListener('change', toggleFertVisibility);
+  toggleFertVisibility();
 }
 </script>
 {% endblock %}

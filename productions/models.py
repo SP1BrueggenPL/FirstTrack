@@ -14,9 +14,10 @@ DEPT_CHOICES = [
     ('QL',  'QL'),
     ('QA',  'QA'),
     ('SD',  'SD'),
-    ('SDP', 'SDP'),
+    ('WPD', 'WPD'),
     ('PP',  'PP'),
     ('CE',  'CE'),
+    ('TE',  'Technologia'),
 ]
 
 
@@ -79,24 +80,44 @@ class FirstProduction(models.Model):
     ]
     TYP_CHOICES = [('A', 'A'), ('B', 'B'), ('', '–')]
 
+    SCOPE_CHOICES = [
+        ('full',      'Produkcja z sensoryką i pakowaniem'),
+        ('sensory',   'Tylko produkcja (sensoryka)'),
+        ('packaging', 'Tylko pakowanie'),
+    ]
+
     # ── Dane z SAP (ekstrakcja AI ze zrzutu) ─────────────
     sap_zlecenie = models.CharField('Zlecenie SAP', max_length=20, blank=True)
     sap_material = models.CharField('Nr materiału SAP', max_length=20, blank=True)
     product_name = models.CharField('Krótki tekst materiału', max_length=300)
 
     # ── Szczegółowe informacje ────────────────────────────
+    scope          = models.CharField('Zakres produkcji', max_length=10,
+                                      choices=SCOPE_CHOICES, default='full')
     data_produkcji = models.DateField('Data produkcji', null=True, blank=True)
     zmiany         = models.CharField('Zmiany', max_length=300, blank=True)
     layout         = models.CharField('Layout', max_length=20, blank=True)
     typ_produkcji  = models.CharField('Typ produkcji A/B', max_length=1,
                                       choices=TYP_CHOICES, blank=True)
     komentarz      = models.TextField('Komentarz', blank=True)
+    fert_number    = models.CharField('Numer FERT', max_length=50, blank=True)
 
-    # ── Linia i numery ────────────────────────────────────
+    # ── Numery ─────────────────────────────────────────────
     packaging_line = models.CharField('Linia pakująca', max_length=50, blank=True)
-    rd_number      = models.CharField('Nr R&D', max_length=50, blank=True)
+    rd_number      = models.CharField('Nr receptury R&D', max_length=50, blank=True)
     recipe         = models.CharField('Receptura powiązana', max_length=100, blank=True)
     crm_project_nr = models.CharField('CRM Projekt Nr.', max_length=50, blank=True)
+
+    # ── Powiązanie sensoryka ↔ pakowanie (produkcje z rozdzielonym zakresem) ──
+    linked_production = models.ForeignKey(
+        'self', null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+        verbose_name='Powiązana produkcja',
+    )
+    linked_at = models.DateTimeField('Data powiązania', null=True, blank=True)
+    linked_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+        verbose_name='Powiązano przez',
+    )
 
     # ── Zespół (FK → User) ────────────────────────────────
     person_rd  = _person_fk('RD',  'prod_rd',  'R&D')
@@ -104,9 +125,10 @@ class FirstProduction(models.Model):
     person_ql  = _person_fk('QL',  'prod_ql',  'QL')
     person_qa  = _person_fk('QA',  'prod_qa',  'QA')
     person_sd  = _person_fk('SD',  'prod_sd',  'SD')
-    person_sdp = _person_fk('SDP', 'prod_sdp', 'SDP')
+    person_wpd = _person_fk('WPD', 'prod_wpd', 'WPD')
     person_pp  = _person_fk('PP',  'prod_pp',  'PP')
     person_ce  = _person_fk('CE',  'prod_ce',  'CE')
+    person_te  = _person_fk('TE',  'prod_te',  'Technologia')
 
     # ── Akceptacja / email ────────────────────────────────
     acceptor       = _person_fk('SD', 'prod_acceptor', 'Osoba akceptująca (SD)')
@@ -137,6 +159,18 @@ class FirstProduction(models.Model):
             'etap3': 'primary', 'zwolniona': 'success',
         }
         return colors.get(self.status, 'secondary')
+
+    @property
+    def is_sensory_only(self):
+        return self.scope == 'sensory'
+
+    @property
+    def is_packaging_only(self):
+        return self.scope == 'packaging'
+
+    @property
+    def skips_sensory(self):
+        return self.scope == 'packaging'
 
 
 # ──────────────────────────────────────────────────────────
@@ -184,7 +218,7 @@ class ChecklistBefore(models.Model):
     confirm_pp  = models.CharField('Podpis PP',  max_length=100, blank=True)
     confirm_ce  = models.CharField('Podpis CE',  max_length=100, blank=True)
     confirm_qa  = models.CharField('Podpis QA',  max_length=100, blank=True)
-    confirm_sdp = models.CharField('Podpis SDP', max_length=100, blank=True)
+    confirm_wpd = models.CharField('Podpis WPD', max_length=100, blank=True)
     confirm_sd  = models.CharField('Podpis SD',  max_length=100, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     created_at   = models.DateTimeField(auto_now_add=True)
@@ -216,9 +250,10 @@ class ChecklistAfter(models.Model):
     person_ql  = models.CharField('QL',   max_length=100, blank=True)
     person_qa  = models.CharField('QA',   max_length=100, blank=True)
     person_sd  = models.CharField('SD',   max_length=100, blank=True)
-    person_sdp = models.CharField('SDP',  max_length=100, blank=True)
+    person_wpd = models.CharField('WPD',  max_length=100, blank=True)
     person_pp  = models.CharField('PP',   max_length=100, blank=True)
     person_ce  = models.CharField('CE',   max_length=100, blank=True)
+    person_te  = models.CharField('Technologia', max_length=100, blank=True)
     sample_start  = models.BooleanField('Próbka – Początek', default=False)
     sample_middle = models.BooleanField('Próbka – Środek',   default=False)
     sample_end    = models.BooleanField('Próbka – Koniec',   default=False)
@@ -228,6 +263,23 @@ class ChecklistAfter(models.Model):
     yield_kg    = models.CharField('Uzyskana wydajność kg/h', max_length=50, blank=True)
     yield_takty = models.CharField('Takty', max_length=50, blank=True)
     uwagi       = models.TextField('Uwagi', blank=True)
+
+    DECISION_CHOICES = [
+        ('accept',      'Akceptacja'),
+        ('conditional', 'Akceptacja warunkowa'),
+        ('correction',  'Do korekty'),
+    ]
+    RETURN_STAGE_CHOICES = [
+        ('sensory',   'Sensoryka'),
+        ('packaging', 'Pakownia'),
+    ]
+    decision             = models.CharField('Decyzja', max_length=15,
+                                             choices=DECISION_CHOICES, blank=True)
+    conditional_comment  = models.TextField('Komentarz (akceptacja warunkowa)', blank=True)
+    correction_comment   = models.TextField('Komentarz (do korekty)', blank=True)
+    correction_return_stage = models.CharField('Powrót do etapu', max_length=10,
+                                               choices=RETURN_STAGE_CHOICES, blank=True)
+
     final_acceptance   = models.BooleanField('Akceptacja SD', null=True)
     acceptance_date    = models.DateField('Data akceptacji', null=True, blank=True)
     acceptance_signature = models.TextField('Podpis SD', blank=True)
@@ -236,9 +288,10 @@ class ChecklistAfter(models.Model):
     sig_ql  = models.TextField('Podpis QL',   blank=True)
     sig_qa  = models.TextField('Podpis QA',   blank=True)
     sig_sd  = models.TextField('Podpis SD',   blank=True)
-    sig_sdp = models.TextField('Podpis SDP',  blank=True)
+    sig_wpd = models.TextField('Podpis WPD',  blank=True)
     sig_pp  = models.TextField('Podpis PP',   blank=True)
     sig_ce  = models.TextField('Podpis CE',   blank=True)
+    sig_te  = models.TextField('Podpis Technologia', blank=True)
     photo_1 = models.ImageField(upload_to='production_photos/', blank=True, null=True)
     photo_2 = models.ImageField(upload_to='production_photos/', blank=True, null=True)
     photo_3 = models.ImageField(upload_to='production_photos/', blank=True, null=True)
