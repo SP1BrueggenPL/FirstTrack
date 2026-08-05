@@ -67,6 +67,7 @@
                   <th>Materiał</th>
                   <th>Opis / Krótki tekst</th>
                   <th>Data prod.</th>
+                  <th style="width:170px">Zakres</th>
                   <th></th>
                 </tr>
               </thead>
@@ -77,6 +78,13 @@
                   <td>{{ row.sap_material|default:"–" }}</td>
                   <td>{{ row.product_name|default:"–" }}</td>
                   <td>{{ row.data_produkcji|default:"–" }}</td>
+                  <td>
+                    <select class="form-select form-select-sm row-scope-select" data-idx="{{ forloop.counter0 }}">
+                      {% for value, label in scope_choices %}
+                      <option value="{{ value }}" {% if row.scope == value %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  </td>
                   <td>
                     <button class="btn btn-outline-secondary btn-sm skip-row-btn py-0 px-2"
                             data-idx="{{ forloop.counter0 }}" title="Pomiń ten wiersz">
@@ -175,7 +183,12 @@ document.querySelectorAll('.skip-row-btn').forEach(function(btn) {
 
 document.getElementById('add-all-btn').addEventListener('click', function() {
   const rows = Array.from(remainingIndices).sort(function(a, b) { return a - b; })
-    .map(function(i) { return extractedData[i]; });
+    .map(function(i) {
+      const row = extractedData[i];
+      const select = document.querySelector('.row-scope-select[data-idx="' + i + '"]');
+      if (select) row.scope = select.value;
+      return row;
+    });
   if (rows.length === 0) return;
   if (!confirm('Dodać ' + rows.length + ' produkcji naraz? Zostanie wysłany jeden zbiorczy mail.')) return;
   const btn = this;

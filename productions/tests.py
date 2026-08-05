@@ -50,6 +50,15 @@ class FirstProductionFormRequiredFieldsTests(TestCase):
         self.assertIn('fert_number', resp.context['form'].errors)
         self.assertIn('recipe', resp.context['form'].errors)
 
+    def test_sensory_only_requires_recipe_not_fert(self):
+        self.client.force_login(self.sd)
+        resp = self.client.post('/nowa/', {
+            'sap_zlecenie': '1', 'sap_material': '2', 'product_name': 'X', 'scope': 'sensory',
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('recipe', resp.context['form'].errors)
+        self.assertNotIn('fert_number', resp.context['form'].errors)
+
 
 class ScopeRoutingAndLinkingTests(TestCase):
     """Produkcje 'tylko pakowanie' pomijają etap sensoryczny; produkcje 'tylko
@@ -192,3 +201,104 @@ class ReleaseDecisionWorkflowTests(TestCase):
             EmailLog.objects.filter(production=self.prod, subject__icontains='Pakowanie zaakceptowane').count(),
             0,
         )
+
+
+class SapPrefillScopeTests(TestCase):
+    """Wiersz z importu masowego może dostać zakres (scope) per wiersz;
+    5-cyfrowy numer materiału domyślnie sugeruje 'tylko pakowanie'."""
+
+    def setUp(self):
+        self.user = _make_user('rduser', 'RD')
+        self.client.force_login(self.user)
+
+    def test_default_scope_heuristic(self):
+        from .views import _default_scope_for_material
+        self.assertEqual(_default_scope_for_material('12345'), 'packaging')
+        self.assertEqual(_default_scope_for_material('1234'), 'full')
+        self.assertEqual(_default_scope_for_material('123456'), 'full')
+        self.assertEqual(_default_scope_for_material(''), 'full')
+        self.assertEqual(_default_scope_for_material('12A45'), 'full')
+
+    def test_prefill_respects_scope_per_row(self):
+        resp = self.client.post(
+            '/api/prefill-sap/',
+            data=json.dumps([
+                {'sap_zlecenie': '1', 'sap_material': '12345', 'product_name': 'pack', 'scope': 'packaging'},
+                {'sap_zlecenie': '2', 'sap_material': '999', 'product_name': 'full', 'scope': 'full'},
+            ]),
+            content_type='application/json',
+        )
+        data = json.loads(resp.content)
+        self.assertTrue(data['ok'])
+        self.assertEqual(FirstProduction.objects.get(sap_zlecenie='1').scope, 'packaging')
+        self.assertEqual(FirstProduction.objects.get(sap_zlecenie='2').scope, 'full')
+
+    def test_prefill_falls_back_to_full_on_invalid_scope(self):
+        resp = self.client.post(
+            '/api/prefill-sap/',
+            data=json.dumps([
+                {'sap_zlecenie': '3', 'sap_material': '1', 'product_name': 'x', 'scope': 'bogus'},
+            ]),
+            content_type='application/json',
+        )
+        self.assertTrue(json.loads(resp.content)['ok'])
+        self.assertEqual(FirstProduction.objects.get(sap_zlecenie='3').scope, 'full')
+
+
+class UserFormAndBulkImportTests(TestCase):
+    """Formularz użytkownika: scalone imię i nazwisko, brak telefonu, oraz
+    masowy import z pliku Excel."""
+
+    def setUp(self):
+        self.admin = _make_user('admin', 'SD')
+        self.admin.is_staff = True
+        self.admin.save()
+        self.client.force_login(self.admin)
+
+    def test_create_user_splits_full_name(self):
+        resp = self.client.post('/uzytkownicy/nowy/', {
+            'full_name': 'Anna Maria Kowalska',
+            'email': 'anna@example.com',
+            'department': 'QA',
+            'chip_number': '11111',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        user = User.objects.get(email='anna@example.com')
+        self.assertEqual(user.first_name, 'Anna Maria')
+        self.assertEqual(user.last_name, 'Kowalska')
+
+    def test_user_form_has_no_phone_field(self):
+        resp = self.client.get('/uzytkownicy/nowy/')
+        self.assertNotContains(resp, 'name="phone"')
+
+    def test_bulk_import_creates_users_and_reports_errors(self):
+        import openpyxl
+        from io import BytesIO
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(['Imię i nazwisko', 'Email', 'Dział', 'Numer chip'])
+        ws.append(['Jan Kowalski', 'jan.k@example.com', 'R&D', 4821])
+        ws.append(['Ewa Nowak', 'ewa.n@example.com', 'WPD', '04822'])
+        ws.append(['Zły Wiersz', 'zly@example.com', 'NieistniejacyDzial', '04823'])
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        upload = SimpleUploadedFile('users.xlsx', buf.read(),
+                                    content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        resp = self.client.post('/uzytkownicy/import/', {'excel_file': upload})
+        self.assertEqual(resp.status_code, 200)
+        results = resp.context['results']
+        self.assertEqual(len(results['created']), 2)
+        self.assertEqual(len(results['errors']), 1)
+
+        jan = User.objects.get(email='jan.k@example.com')
+        self.assertEqual(jan.first_name, 'Jan')
+        self.assertEqual(jan.last_name, 'Kowalski')
+        self.assertEqual(jan.profile.chip_number, '04821')  # zero-padded back from the float 4821.0
+        self.assertEqual(jan.profile.department, 'RD')
+
+        ewa = User.objects.get(email='ewa.n@example.com')
+        self.assertEqual(ewa.profile.department, 'WPD')

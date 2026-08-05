@@ -25,7 +25,7 @@ from .forms import (
     ChecklistAfterSensoryForm, ChecklistAfterPackagingForm, ChecklistAfterAcceptanceForm,
     ChecklistAfterHeaderForm, LinkPackagingForm,
     SensoryParamFormSet, PackagingItemFormSet,
-    UserCreateForm, UserEditForm, UserChipForm, NotificationRecipientForm,
+    UserCreateForm, UserEditForm, UserChipForm, UserBulkImportForm, NotificationRecipientForm,
 )
 
 logger = logging.getLogger(__name__)
@@ -120,6 +120,14 @@ def dashboard(request):
 # Import SAP (AI ekstrakcja)
 # ──────────────────────────────────────────────
 
+def _default_scope_for_material(sap_material):
+    """Zlecenia z 5-cyfrowym numerem materiału są zwykle samym pakowaniem
+    (FERT); pozostałe domyślnie zakładamy jako pełny proces (sensoryka +
+    pakowanie) - użytkownik może to zmienić per wiersz przed dodaniem."""
+    material = (sap_material or '').strip()
+    return 'packaging' if material.isdigit() and len(material) == 5 else 'full'
+
+
 @login_required
 def import_sap(request):
     form = SAPImportForm()
@@ -141,9 +149,14 @@ def import_sap(request):
                 messages.error(request, 'Nie udało się wyciągnąć danych. Sprawdź klucz API lub spróbuj ręcznie.')
 
     prefill = request.session.pop('sap_extracted', None)
+    if prefill:
+        for row in prefill:
+            row['scope'] = _default_scope_for_material(row.get('sap_material'))
+
     return render(request, 'productions/import_sap.html', {
         'form': form,
         'extracted': prefill,
+        'scope_choices': FirstProduction.SCOPE_CHOICES,
     })
 
 
@@ -242,11 +255,15 @@ def api_prefill_sap(request):
                 skipped_zlecenia.append(sap_zlecenie)
                 continue
             date_val = data.get('data_produkcji') or None
+            scope = data.get('scope') or 'full'
+            if scope not in dict(FirstProduction.SCOPE_CHOICES):
+                scope = 'full'
             prod = FirstProduction.objects.create(
                 sap_zlecenie=sap_zlecenie,
                 sap_material=data.get('sap_material', ''),
                 product_name=data.get('product_name', '') or 'Nowa produkcja',
                 data_produkcji=date_val,
+                scope=scope,
             )
             created_productions.append(prod)
         _notify_new_productions(created_productions)
@@ -1055,37 +1072,40 @@ def user_list(request):
     })
 
 
+def _create_user_account(cleaned):
+    """Tworzy konto + profil na podstawie cleaned_data z UserCreateForm
+    (albo równoważnego słownika, np. przy imporcie masowym z Excela)."""
+    username_base = cleaned['email'].split('@')[0].lower()
+    username = username_base
+    counter = 1
+    while User.objects.filter(username=username).exists():
+        username = f'{username_base}{counter}'
+        counter += 1
+
+    user = User.objects.create_user(
+        username=username,
+        email=cleaned['email'],
+        first_name=cleaned['first_name'],
+        last_name=cleaned['last_name'],
+    )
+    # Numer chip zastępuje hasło – ustawiany też jako hasło Django,
+    # żeby ten sam numer działał do logowania w panelu /admin/.
+    user.set_password(cleaned['chip_number'])
+    user.save()
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    profile.department = cleaned['department']
+    profile.chip_number = cleaned['chip_number']
+    profile.save()
+    return user
+
+
 @login_required
 def user_create(request):
     form = UserCreateForm()
     if request.method == 'POST':
         form = UserCreateForm(request.POST)
         if form.is_valid():
-            d = form.cleaned_data
-            # username = email (przed @)
-            username_base = d['email'].split('@')[0].lower()
-            username = username_base
-            counter = 1
-            while User.objects.filter(username=username).exists():
-                username = f'{username_base}{counter}'
-                counter += 1
-
-            user = User.objects.create_user(
-                username=username,
-                email=d['email'],
-                first_name=d['first_name'],
-                last_name=d['last_name'],
-            )
-            # Numer chip zastępuje hasło – ustawiany też jako hasło Django,
-            # żeby ten sam numer działał do logowania w panelu /admin/.
-            user.set_password(d['chip_number'])
-            user.save()
-            profile, _ = UserProfile.objects.get_or_create(user=user)
-            profile.department = d['department']
-            profile.phone = d.get('phone', '')
-            profile.chip_number = d['chip_number']
-            profile.save()
-
+            user = _create_user_account(form.cleaned_data)
             messages.success(request, f'Konto dla {user.get_full_name()} zostało utworzone.')
             return redirect('user_list')
 
@@ -1100,11 +1120,9 @@ def user_edit(request, pk):
     profile, _ = UserProfile.objects.get_or_create(user=user)
 
     initial = {
-        'first_name': user.first_name,
-        'last_name':  user.last_name,
+        'full_name':  f'{user.first_name} {user.last_name}'.strip(),
         'email':      user.email,
         'department': profile.department,
-        'phone':      profile.phone,
         'is_active':  user.is_active,
         'is_staff':   user.is_staff,
     }
@@ -1121,7 +1139,6 @@ def user_edit(request, pk):
             user.is_staff   = d['is_staff']
             user.save()
             profile.department = d['department']
-            profile.phone      = d.get('phone', '')
             profile.save()
             messages.success(request, f'Dane użytkownika {user.get_full_name()} zaktualizowane.')
             return redirect('user_list')
@@ -1129,6 +1146,112 @@ def user_edit(request, pk):
     return render(request, 'productions/user_form.html', {
         'form': form, 'edit_user': user, 'title': f'Edytuj: {user.get_full_name()}',
     })
+
+
+@login_required
+def user_bulk_import(request):
+    form = UserBulkImportForm()
+    results = None
+
+    if request.method == 'POST':
+        form = UserBulkImportForm(request.POST, request.FILES)
+        if form.is_valid():
+            results = _import_users_from_excel(request.FILES['excel_file'])
+            if results['created']:
+                messages.success(request, f"Utworzono {len(results['created'])} kont.")
+            if results['errors']:
+                messages.warning(request, f"Pominięto {len(results['errors'])} wierszy - patrz szczegóły poniżej.")
+            if not results['created'] and not results['errors']:
+                messages.error(request, 'Plik nie zawierał żadnych wierszy z danymi.')
+
+    return render(request, 'productions/user_bulk_import.html', {
+        'form': form, 'results': results,
+    })
+
+
+def _dept_lookup():
+    """Mapuje kod działu albo jego etykietę (bez rozróżniania wielkości liter)
+    na kod działu, np. {'rd': 'RD', 'r&d': 'RD', 'wpd': 'WPD', ...}."""
+    lookup = {}
+    for code, label in DEPT_CHOICES:
+        lookup[code.strip().lower()] = code
+        lookup[label.strip().lower()] = code
+    return lookup
+
+
+def _normalize_chip_cell(value):
+    """Excel często przechowuje numer chip jako liczbę (np. 4821.0) - trzeba
+    go z powrotem dopełnić zerami do 5 cyfr, żeby np. "04821" nie stało się "4821"."""
+    if value is None:
+        return ''
+    if isinstance(value, float):
+        return f'{int(value):05d}'
+    if isinstance(value, int):
+        return f'{value:05d}'
+    return str(value).strip()
+
+
+def _import_users_from_excel(excel_file):
+    """Parsuje plik .xlsx (kolumny: Imię i nazwisko, Email, Dział, Numer chip)
+    i tworzy konta wiersz po wierszu - błąd w jednym wierszu nie przerywa
+    importu pozostałych. Kolejność kolumn wg nagłówka (niezależna od wielkości
+    liter), z fallbackiem na pozycję A/B/C/D, jeśli nagłówek nie jest znany."""
+    import openpyxl
+
+    created, errors = [], []
+    wb = openpyxl.load_workbook(excel_file, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return {'created': created, 'errors': errors}
+
+    header = [str(c or '').strip().lower() for c in rows[0]]
+    col_map = {'imię i nazwisko': 0, 'imie i nazwisko': 0, 'email': 1, 'dział': 2, 'dzial': 2, 'numer chip': 3}
+    idx = {'name': 0, 'email': 1, 'dept': 2, 'chip': 3}
+    if any(h in col_map for h in header):
+        for h_i, h in enumerate(header):
+            if h in ('imię i nazwisko', 'imie i nazwisko'):
+                idx['name'] = h_i
+            elif h == 'email':
+                idx['email'] = h_i
+            elif h in ('dział', 'dzial'):
+                idx['dept'] = h_i
+            elif h == 'numer chip':
+                idx['chip'] = h_i
+        data_rows = rows[1:]
+    else:
+        data_rows = rows
+
+    dept_lookup = _dept_lookup()
+    for row_num, row in enumerate(data_rows, start=2):
+        if not any(row):
+            continue
+        try:
+            full_name = str(row[idx['name']] or '').strip()
+            email = str(row[idx['email']] or '').strip()
+            dept_raw = str(row[idx['dept']] or '').strip()
+            chip = _normalize_chip_cell(row[idx['chip']])
+        except IndexError:
+            errors.append({'row': row_num, 'reason': 'Wiersz ma mniej kolumn niż wymagane.'})
+            continue
+
+        dept_code = dept_lookup.get(dept_raw.lower())
+        if not dept_code:
+            errors.append({'row': row_num, 'reason': f'Nieznany dział: „{dept_raw}".'})
+            continue
+
+        form = UserCreateForm(data={
+            'full_name': full_name, 'email': email,
+            'department': dept_code, 'chip_number': chip,
+        })
+        if form.is_valid():
+            user = _create_user_account(form.cleaned_data)
+            created.append(user)
+        else:
+            reason = '; '.join(f'{f}: {"; ".join(e)}' for f, e in form.errors.items())
+            errors.append({'row': row_num, 'reason': reason})
+
+    return {'created': created, 'errors': errors}
 
 
 @login_required

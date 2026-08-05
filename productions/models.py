@@ -28,7 +28,6 @@ DEPT_CHOICES = [
 class UserProfile(models.Model):
     user        = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     department  = models.CharField('Dział', max_length=10, choices=DEPT_CHOICES, blank=True)
-    phone       = models.CharField('Telefon', max_length=30, blank=True)
     chip_number = models.CharField(
         'Numer chip', max_length=5, unique=True, null=True, blank=True,
         validators=[chip_number_validator],

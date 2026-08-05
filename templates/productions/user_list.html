@@ -4,9 +4,14 @@
 {% block content %}
 <div class="page-header">
   <h4><i class="bi bi-people me-2"></i>Użytkownicy systemu</h4>
-  <a href="{% url 'user_create' %}" class="btn btn-primary btn-sm">
-    <i class="bi bi-person-plus me-1"></i>Nowe konto
-  </a>
+  <div class="d-flex gap-2">
+    <a href="{% url 'user_bulk_import' %}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-file-earmark-excel me-1"></i>Import z Excela
+    </a>
+    <a href="{% url 'user_create' %}" class="btn btn-primary btn-sm">
+      <i class="bi bi-person-plus me-1"></i>Nowe konto
+    </a>
+  </div>
 </div>
 
 {% for dept_label, users in users_by_dept.items %}
@@ -21,7 +26,6 @@
         <tr>
           <th>Imię i nazwisko</th>
           <th>Email</th>
-          <th>Telefon</th>
           <th>Login</th>
           <th>Nr chip</th>
           <th>Status</th>
@@ -33,7 +37,6 @@
         <tr class="{% if not u.is_active %}table-secondary text-muted{% endif %}">
           <td class="fw-semibold">{{ u.get_full_name|default:u.username }}</td>
           <td>{{ u.email|default:"–" }}</td>
-          <td class="text-muted small">{{ u.profile.phone|default:"–" }}</td>
           <td class="text-muted small font-monospace">{{ u.username }}</td>
           <td class="text-muted small font-monospace">{{ u.profile.chip_number|default:"–" }}</td>
           <td>

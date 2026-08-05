@@ -30,6 +30,7 @@ urlpatterns = [
     # Zarządzanie użytkownikami
     path('uzytkownicy/', views.user_list, name='user_list'),
     path('uzytkownicy/nowy/', views.user_create, name='user_create'),
+    path('uzytkownicy/import/', views.user_bulk_import, name='user_bulk_import'),
     path('uzytkownicy/<int:pk>/edytuj/', views.user_edit, name='user_edit'),
     path('uzytkownicy/<int:pk>/chip/', views.user_chip, name='user_chip'),
 

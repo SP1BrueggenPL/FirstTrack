@@ -3,6 +3,7 @@ openai>=1.30
 Pillow>=10.0
 python-dotenv>=1.0
 weasyprint>=62
+openpyxl>=3.1
 psycopg2-binary>=2.9
 azure-communication-email>=1.0.0
 

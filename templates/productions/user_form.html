@@ -21,29 +21,20 @@
           {% csrf_token %}
 
           <div class="row g-3">
-            <div class="col-md-6">
-              <label class="form-label fw-semibold">Imię *</label>
-              {{ form.first_name }}
-              {% if form.first_name.errors %}<div class="text-danger small">{{ form.first_name.errors }}</div>{% endif %}
-            </div>
-            <div class="col-md-6">
-              <label class="form-label fw-semibold">Nazwisko *</label>
-              {{ form.last_name }}
-              {% if form.last_name.errors %}<div class="text-danger small">{{ form.last_name.errors }}</div>{% endif %}
-            </div>
             <div class="col-md-8">
-              <label class="form-label fw-semibold">Email służbowy *</label>
-              {{ form.email }}
-              {% if form.email.errors %}<div class="text-danger small">{{ form.email.errors }}</div>{% endif %}
-            </div>
-            <div class="col-md-4">
-              <label class="form-label fw-semibold">Telefon</label>
-              {{ form.phone }}
+              <label class="form-label fw-semibold">Imię i nazwisko *</label>
+              {{ form.full_name }}
+              {% if form.full_name.errors %}<div class="text-danger small">{{ form.full_name.errors }}</div>{% endif %}
             </div>
             <div class="col-md-4">
               <label class="form-label fw-semibold">Dział *</label>
               {{ form.department }}
               {% if form.department.errors %}<div class="text-danger small">{{ form.department.errors }}</div>{% endif %}
+            </div>
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Email służbowy *</label>
+              {{ form.email }}
+              {% if form.email.errors %}<div class="text-danger small">{{ form.email.errors }}</div>{% endif %}
             </div>
 
             {% if not is_create %}

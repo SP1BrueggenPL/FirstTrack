@@ -1,0 +1,95 @@
+{% extends "productions/base.html" %}
+{% block title %}Import użytkowników z Excela{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0"><i class="bi bi-file-earmark-excel me-2"></i>Import użytkowników z Excela</h4>
+  <a href="{% url 'user_list' %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Powrót
+  </a>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-5">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-upload me-2"></i>Wgraj plik .xlsx</div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">
+          Plik powinien mieć nagłówek w pierwszym wierszu i kolumny (w dowolnej kolejności):
+          <strong>Imię i nazwisko</strong>, <strong>Email</strong>, <strong>Dział</strong>, <strong>Numer chip</strong>.
+          Dział można podać jako kod (np. „RD") albo pełną nazwę (np. „R&amp;D").
+        </p>
+        <form method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+          <div class="mb-3">
+            {{ form.excel_file }}
+            {% if form.excel_file.errors %}
+              <div class="text-danger small mt-1">{{ form.excel_file.errors }}</div>
+            {% endif %}
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-magic me-1"></i>Importuj
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-7">
+    {% if results %}
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-check-circle text-success me-2"></i>Utworzone konta ({{ results.created|length }})</div>
+      <div class="card-body p-0">
+        {% if results.created %}
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light">
+            <tr><th>Imię i nazwisko</th><th>Email</th><th>Dział</th><th>Nr chip</th></tr>
+          </thead>
+          <tbody>
+            {% for u in results.created %}
+            <tr>
+              <td>{{ u.get_full_name }}</td>
+              <td>{{ u.email }}</td>
+              <td>{{ u.profile.get_department_display }}</td>
+              <td class="font-monospace">{{ u.profile.chip_number }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted small p-3 mb-0">Żadne konto nie zostało utworzone.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if results.errors %}
+    <div class="card">
+      <div class="card-header"><i class="bi bi-exclamation-triangle text-warning me-2"></i>Pominięte wiersze ({{ results.errors|length }})</div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr><th style="width:80px">Wiersz</th><th>Powód</th></tr>
+          </thead>
+          <tbody>
+            {% for err in results.errors %}
+            <tr>
+              <td>{{ err.row }}</td>
+              <td class="text-danger small">{{ err.reason }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="card h-100">
+      <div class="card-body d-flex flex-column align-items-center justify-content-center text-muted py-5">
+        <i class="bi bi-arrow-left-circle display-4 mb-3"></i>
+        <p>Wgraj plik .xlsx, żeby zobaczyć wynik importu.</p>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -37,18 +37,43 @@ _CHIP_WIDGET = forms.TextInput(attrs={
 })
 
 
+def split_full_name(full_name):
+    """Dzieli 'Imię i nazwisko' na (first_name, last_name) - ostatnie słowo
+    to nazwisko, wszystko przed nim to imię (obsługuje imiona złożone)."""
+    parts = (full_name or '').strip().split()
+    if not parts:
+        return '', ''
+    if len(parts) == 1:
+        return parts[0], ''
+    return ' '.join(parts[:-1]), parts[-1]
+
+
+def _clean_chip_number(chip, *, exclude_user=None):
+    chip = (chip or '').strip()
+    if not chip.isdigit() or len(chip) != 5:
+        raise forms.ValidationError('Numer chip musi składać się z dokładnie 5 cyfr.')
+    qs = UserProfile.objects.filter(chip_number=chip)
+    if exclude_user is not None:
+        qs = qs.exclude(user=exclude_user)
+    if qs.exists():
+        raise forms.ValidationError('Ten numer chip jest już przypisany do innego użytkownika.')
+    return chip
+
+
 class UserCreateForm(forms.Form):
-    first_name = forms.CharField(label='Imię', max_length=150,
-                                 widget=_fc('Imię', 'form-control'))
-    last_name  = forms.CharField(label='Nazwisko', max_length=150,
-                                 widget=_fc('Nazwisko', 'form-control'))
+    full_name = forms.CharField(label='Imię i nazwisko', max_length=150,
+                                widget=_fc('np. Jan Kowalski', 'form-control'))
     email      = forms.EmailField(label='Email służbowy',
                                   widget=forms.EmailInput(attrs={'class': 'form-control'}))
     department = forms.ChoiceField(label='Dział', choices=[('', '– wybierz –')] + list(DEPT_CHOICES),
                                    widget=_sel('form-select'))
-    phone      = forms.CharField(label='Telefon', max_length=30, required=False,
-                                 widget=_fc('np. +48 500 000 000', 'form-control'))
     chip_number = forms.CharField(label='Numer chip (5 cyfr)', widget=_CHIP_WIDGET)
+
+    def clean_full_name(self):
+        value = (self.cleaned_data.get('full_name') or '').strip()
+        if len(value.split()) < 2:
+            raise forms.ValidationError('Podaj imię i nazwisko.')
+        return value
 
     def clean_email(self):
         email = self.cleaned_data['email']
@@ -57,27 +82,36 @@ class UserCreateForm(forms.Form):
         return email
 
     def clean_chip_number(self):
-        chip = self.cleaned_data['chip_number'].strip()
-        if not chip.isdigit() or len(chip) != 5:
-            raise forms.ValidationError('Numer chip musi składać się z dokładnie 5 cyfr.')
-        if UserProfile.objects.filter(chip_number=chip).exists():
-            raise forms.ValidationError('Ten numer chip jest już przypisany do innego użytkownika.')
-        return chip
+        return _clean_chip_number(self.cleaned_data.get('chip_number'))
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get('full_name'):
+            cleaned['first_name'], cleaned['last_name'] = split_full_name(cleaned['full_name'])
+        return cleaned
 
 
 class UserEditForm(forms.Form):
-    first_name = forms.CharField(label='Imię', max_length=150,
-                                 widget=_fc('Imię', 'form-control'))
-    last_name  = forms.CharField(label='Nazwisko', max_length=150,
-                                 widget=_fc('Nazwisko', 'form-control'))
+    full_name = forms.CharField(label='Imię i nazwisko', max_length=150,
+                                widget=_fc('np. Jan Kowalski', 'form-control'))
     email      = forms.EmailField(label='Email służbowy',
                                   widget=forms.EmailInput(attrs={'class': 'form-control'}))
     department = forms.ChoiceField(label='Dział', choices=[('', '– wybierz –')] + list(DEPT_CHOICES),
                                    widget=_sel('form-select'))
-    phone      = forms.CharField(label='Telefon', max_length=30, required=False,
-                                 widget=_fc('np. +48 500 000 000', 'form-control'))
     is_active  = forms.BooleanField(label='Konto aktywne', required=False)
     is_staff   = forms.BooleanField(label='Admin', required=False)
+
+    def clean_full_name(self):
+        value = (self.cleaned_data.get('full_name') or '').strip()
+        if len(value.split()) < 2:
+            raise forms.ValidationError('Podaj imię i nazwisko.')
+        return value
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get('full_name'):
+            cleaned['first_name'], cleaned['last_name'] = split_full_name(cleaned['full_name'])
+        return cleaned
 
 
 class UserChipForm(forms.Form):
@@ -88,15 +122,15 @@ class UserChipForm(forms.Form):
         super().__init__(*args, **kwargs)
 
     def clean_chip_number(self):
-        chip = self.cleaned_data['chip_number'].strip()
-        if not chip.isdigit() or len(chip) != 5:
-            raise forms.ValidationError('Numer chip musi składać się z dokładnie 5 cyfr.')
-        qs = UserProfile.objects.filter(chip_number=chip)
-        if self.user is not None:
-            qs = qs.exclude(user=self.user)
-        if qs.exists():
-            raise forms.ValidationError('Ten numer chip jest już przypisany do innego użytkownika.')
-        return chip
+        return _clean_chip_number(self.cleaned_data.get('chip_number'), exclude_user=self.user)
+
+
+class UserBulkImportForm(forms.Form):
+    excel_file = forms.FileField(
+        label='Plik Excel (.xlsx)',
+        help_text='Kolumny: Imię i nazwisko, Email, Dział, Numer chip.',
+        widget=forms.FileInput(attrs={'class': 'form-control', 'accept': '.xlsx'}),
+    )
 
 
 # ──────────────────────────────────────────────────────────
@@ -218,8 +252,8 @@ class FirstProductionForm(forms.ModelForm):
 
     def clean_recipe(self):
         value = self.cleaned_data.get('recipe', '')
-        if self.cleaned_data.get('scope') == 'packaging' and not value:
-            raise forms.ValidationError('Numer receptury jest wymagany dla produkcji „tylko pakowanie".')
+        if self.cleaned_data.get('scope') in ('packaging', 'sensory') and not value:
+            raise forms.ValidationError('Numer receptury jest wymagany dla tego zakresu produkcji.')
         return value
 
     def _user_label(self, user):
