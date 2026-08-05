@@ -1141,13 +1141,18 @@ def user_bulk_import(request):
     if request.method == 'POST':
         form = UserBulkImportForm(request.POST, request.FILES)
         if form.is_valid():
-            results = _import_users_from_excel(request.FILES['excel_file'])
-            if results['created']:
-                messages.success(request, f"Utworzono {len(results['created'])} kont.")
-            if results['errors']:
-                messages.warning(request, f"Pominięto {len(results['errors'])} wierszy - patrz szczegóły poniżej.")
-            if not results['created'] and not results['errors']:
-                messages.error(request, 'Plik nie zawierał żadnych wierszy z danymi.')
+            try:
+                results = _import_users_from_excel(request.FILES['excel_file'])
+            except ExcelImportError as e:
+                messages.error(request, str(e))
+                results = None
+            else:
+                if results['created']:
+                    messages.success(request, f"Utworzono {len(results['created'])} kont.")
+                if results['errors']:
+                    messages.warning(request, f"Pominięto {len(results['errors'])} wierszy - patrz szczegóły poniżej.")
+                if not results['created'] and not results['errors']:
+                    messages.error(request, 'Plik nie zawierał żadnych wierszy z danymi.')
 
     return render(request, 'productions/user_bulk_import.html', {
         'form': form, 'results': results,
@@ -1176,15 +1181,36 @@ def _normalize_chip_cell(value):
     return str(value).strip()
 
 
+class ExcelImportError(Exception):
+    """Podnoszony, gdy plik Excel nie mógł zostać przetworzony - np. pakiet
+    openpyxl nie jest zainstalowany na serwerze, albo plik nie jest
+    poprawnym .xlsx. Importujemy openpyxl leniwie (nie na poziomie modułu),
+    żeby brak tej biblioteki nie wywalał całej aplikacji przy starcie, tylko
+    konkretną akcję importu."""
+
+
 def _import_users_from_excel(excel_file):
     """Parsuje plik .xlsx (kolumny: Imię i nazwisko, Email, Dział, Numer chip)
     i tworzy konta wiersz po wierszu - błąd w jednym wierszu nie przerywa
     importu pozostałych. Kolejność kolumn wg nagłówka (niezależna od wielkości
     liter), z fallbackiem na pozycję A/B/C/D, jeśli nagłówek nie jest znany."""
-    import openpyxl
+    try:
+        import openpyxl
+    except ImportError as e:
+        logger.error('openpyxl nie jest zainstalowany - nie można zaimportować użytkowników: %s', e)
+        raise ExcelImportError(
+            'Nie udało się przetworzyć pliku: biblioteka openpyxl nie jest zainstalowana na serwerze. '
+            'Skontaktuj się z administratorem systemu.'
+        ) from e
 
     created, errors = [], []
-    wb = openpyxl.load_workbook(excel_file, data_only=True)
+    try:
+        wb = openpyxl.load_workbook(excel_file, data_only=True)
+    except Exception as e:
+        logger.error('Błąd wczytywania pliku Excel: %s', e, exc_info=True)
+        raise ExcelImportError(
+            'Nie udało się wczytać pliku - sprawdź, czy to poprawny plik .xlsx.'
+        ) from e
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
@@ -1216,25 +1242,29 @@ def _import_users_from_excel(excel_file):
             email = str(row[idx['email']] or '').strip()
             dept_raw = str(row[idx['dept']] or '').strip()
             chip = _normalize_chip_cell(row[idx['chip']])
+
+            dept_code = dept_lookup.get(dept_raw.lower())
+            if not dept_code:
+                errors.append({'row': row_num, 'reason': f'Nieznany dział: „{dept_raw}".'})
+                continue
+
+            form = UserCreateForm(data={
+                'full_name': full_name, 'email': email,
+                'department': dept_code, 'chip_number': chip,
+            })
+            if form.is_valid():
+                user = _create_user_account(form.cleaned_data)
+                created.append(user)
+            else:
+                reason = '; '.join(f'{f}: {"; ".join(e)}' for f, e in form.errors.items())
+                errors.append({'row': row_num, 'reason': reason})
         except IndexError:
             errors.append({'row': row_num, 'reason': 'Wiersz ma mniej kolumn niż wymagane.'})
-            continue
-
-        dept_code = dept_lookup.get(dept_raw.lower())
-        if not dept_code:
-            errors.append({'row': row_num, 'reason': f'Nieznany dział: „{dept_raw}".'})
-            continue
-
-        form = UserCreateForm(data={
-            'full_name': full_name, 'email': email,
-            'department': dept_code, 'chip_number': chip,
-        })
-        if form.is_valid():
-            user = _create_user_account(form.cleaned_data)
-            created.append(user)
-        else:
-            reason = '; '.join(f'{f}: {"; ".join(e)}' for f, e in form.errors.items())
-            errors.append({'row': row_num, 'reason': reason})
+        except Exception as e:
+            # Jeden zły wiersz (np. nieoczekiwany format komórki, konflikt w
+            # bazie) nie może przerwać importu pozostałych wierszy.
+            logger.error('Błąd importu wiersza %s z Excela: %s', row_num, e, exc_info=True)
+            errors.append({'row': row_num, 'reason': f'Nieoczekiwany błąd: {e}'})
 
     return {'created': created, 'errors': errors}
 
