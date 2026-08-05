@@ -119,15 +119,14 @@
     <div class="card mb-3">
       <div class="card-header"><i class="bi bi-people me-2"></i>Zespół</div>
       <div class="card-body p-0">
-        {% with rd=production.person_rd sc=production.person_sc ql=production.person_ql qa=production.person_qa sd=production.person_sd wpd=production.person_wpd pp=production.person_pp ce=production.person_ce te=production.person_te %}
-        {% if rd or sc or ql or qa or sd or wpd or pp or ce or te %}
+        {% with rd=production.person_rd sc=production.person_sc ql=production.person_ql qa=production.person_qa sd=production.person_sd pp=production.person_pp ce=production.person_ce te=production.person_te %}
+        {% if rd or sc or ql or qa or sd or pp or ce or te %}
         <table class="table table-sm table-borderless mb-0 small">
           {% if rd %}<tr><td class="text-muted ps-3" style="width:45px">R&amp;D</td><td>{{ rd.get_full_name }}</td></tr>{% endif %}
           {% if sc %}<tr><td class="text-muted ps-3">SC</td><td>{{ sc.get_full_name }}</td></tr>{% endif %}
           {% if ql %}<tr><td class="text-muted ps-3">QL</td><td>{{ ql.get_full_name }}</td></tr>{% endif %}
           {% if qa %}<tr><td class="text-muted ps-3">QA</td><td>{{ qa.get_full_name }}</td></tr>{% endif %}
           {% if sd %}<tr><td class="text-muted ps-3">SD</td><td>{{ sd.get_full_name }}</td></tr>{% endif %}
-          {% if wpd %}<tr><td class="text-muted ps-3">WPD</td><td>{{ wpd.get_full_name }}</td></tr>{% endif %}
           {% if pp %}<tr><td class="text-muted ps-3">PP</td><td>{{ pp.get_full_name }}</td></tr>{% endif %}
           {% if ce %}<tr><td class="text-muted ps-3">CE</td><td>{{ ce.get_full_name }}</td></tr>{% endif %}
           {% if te %}<tr><td class="text-muted ps-3">Techn.</td><td>{{ te.get_full_name }}</td></tr>{% endif %}

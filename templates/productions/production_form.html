@@ -108,7 +108,7 @@
         </div>
         <div class="col-md-3">
           <label class="form-label fw-semibold small">
-            Receptura powiązana{% if form.recipe.field.required %} *{% endif %}
+            Receptura powiązana{% if form.recipe.field.required %} *{% endif %}<span id="recipe-required-mark" class="d-none"> *</span>
           </label>
           {{ form.recipe }}
           {% if form.recipe.errors %}<div class="text-danger small">{{ form.recipe.errors }}</div>{% endif %}
@@ -144,9 +144,6 @@
           <label class="form-label fw-semibold small">SD</label>{{ form.person_sd }}
         </div>
         <div class="col-md-3">
-          <label class="form-label fw-semibold small">WPD</label>{{ form.person_wpd }}
-        </div>
-        <div class="col-md-3">
           <label class="form-label fw-semibold small">PP</label>{{ form.person_pp }}
         </div>
         <div class="col-md-3">
@@ -163,22 +160,11 @@
   <div class="card mb-3">
     <div class="card-header"><i class="bi bi-person-check me-2"></i>Osoba akceptująca – dział SD</div>
     <div class="card-body">
-      <div class="row g-2 align-items-end">
-        <div class="col-md-5">
+      <div class="row g-2">
+        <div class="col-md-6">
           <label class="form-label fw-semibold small">Osoba akceptująca (SD)</label>
           {{ form.acceptor }}
-        </div>
-        <div class="col-md-5">
-          <label class="form-label fw-semibold small">
-            Email <span class="text-muted fw-normal">(auto-uzupełniany)</span>
-          </label>
-          {{ form.acceptor_email }}
-        </div>
-        <div class="col-md-2">
-          <button type="button" class="btn btn-outline-secondary btn-sm w-100"
-                  onclick="document.getElementById('id_acceptor_email').value=''">
-            <i class="bi bi-x-circle me-1"></i>Wyczyść
-          </button>
+          <div class="form-text small">Email do akceptacji jest pobierany z konta wybranej osoby.</div>
         </div>
       </div>
     </div>
@@ -199,30 +185,20 @@
 
 {% block extra_js %}
 <script>
-// Auto-fill email akceptującego po wyborze z listy
-const acceptorSelect = document.getElementById('id_acceptor');
-const emailField     = document.getElementById('id_acceptor_email');
-
-if (acceptorSelect) {
-  acceptorSelect.addEventListener('change', function() {
-    const pk = this.value;
-    if (!pk) { emailField.value = ''; return; }
-    fetch(`/api/user-email/${pk}/`)
-      .then(r => r.json())
-      .then(data => { if (data.email) emailField.value = data.email; });
-  });
-}
-
-// Numer FERT jest istotny tylko dla produkcji "tylko pakowanie"
-const scopeSelect  = document.getElementById('id_scope');
-const fertWrap      = document.getElementById('fert-number-wrap');
-function toggleFertVisibility() {
-  if (!scopeSelect || !fertWrap) return;
-  fertWrap.style.display = (scopeSelect.value === 'packaging') ? '' : 'none';
+// Numer FERT jest istotny tylko dla produkcji "tylko pakowanie"; numer
+// receptury jest wymagany dla "tylko pakowanie" i "tylko sensoryka" (pole
+// pozostaje widoczne dla każdego zakresu, zmienia się tylko oznaczenie *).
+const scopeSelect      = document.getElementById('id_scope');
+const fertWrap         = document.getElementById('fert-number-wrap');
+const recipeRequiredEl = document.getElementById('recipe-required-mark');
+function toggleScopeFields() {
+  if (!scopeSelect) return;
+  if (fertWrap) fertWrap.style.display = (scopeSelect.value === 'packaging') ? '' : 'none';
+  if (recipeRequiredEl) recipeRequiredEl.classList.toggle('d-none', scopeSelect.value === 'full');
 }
 if (scopeSelect) {
-  scopeSelect.addEventListener('change', toggleFertVisibility);
-  toggleFertVisibility();
+  scopeSelect.addEventListener('change', toggleScopeFields);
+  toggleScopeFields();
 }
 </script>
 {% endblock %}

@@ -25,11 +25,11 @@ urlpatterns = [
 
     # API
     path('api/prefill-sap/', views.api_prefill_sap, name='api_prefill_sap'),
-    path('api/user-email/<int:pk>/', views.api_user_email, name='api_user_email'),
 
     # Zarządzanie użytkownikami
     path('uzytkownicy/', views.user_list, name='user_list'),
     path('uzytkownicy/nowy/', views.user_create, name='user_create'),
+    path('uzytkownicy/import/', views.user_bulk_import, name='user_bulk_import'),
     path('uzytkownicy/<int:pk>/edytuj/', views.user_edit, name='user_edit'),
     path('uzytkownicy/<int:pk>/chip/', views.user_chip, name='user_chip'),
 

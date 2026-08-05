@@ -53,7 +53,6 @@ def _build_team_sigs(prod, ca):
         ('QL',  'sig_ql', prod.person_ql),
         ('QA',  'sig_qa', prod.person_qa),
         ('SD',  'sig_sd', prod.person_sd),
-        ('WPD', 'sig_wpd', prod.person_wpd),
         ('PP',  'sig_pp', prod.person_pp),
         ('CE',  'sig_ce', prod.person_ce),
         ('Technologia', 'sig_te', prod.person_te),
