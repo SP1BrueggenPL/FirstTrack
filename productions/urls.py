@@ -25,7 +25,6 @@ urlpatterns = [
 
     # API
     path('api/prefill-sap/', views.api_prefill_sap, name='api_prefill_sap'),
-    path('api/user-email/<int:pk>/', views.api_user_email, name='api_user_email'),
 
     # Zarządzanie użytkownikami
     path('uzytkownicy/', views.user_list, name='user_list'),

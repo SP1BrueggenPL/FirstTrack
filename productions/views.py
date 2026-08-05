@@ -224,19 +224,6 @@ Zwróć TYLKO JSON array, bez żadnego dodatkowego tekstu, komentarzy ani format
 
 
 # ──────────────────────────────────────────────
-# API – user email (do auto-fill akceptującego)
-# ──────────────────────────────────────────────
-
-@login_required
-def api_user_email(request, pk):
-    try:
-        user = User.objects.get(pk=pk)
-        return JsonResponse({'email': user.email, 'name': user.get_full_name()})
-    except User.DoesNotExist:
-        return JsonResponse({'email': '', 'name': ''})
-
-
-# ──────────────────────────────────────────────
 # API – prefill z SAP
 # ──────────────────────────────────────────────
 
@@ -342,7 +329,7 @@ def production_detail(request, pk):
     prod = get_object_or_404(
         FirstProduction.objects.select_related(
             'person_rd', 'person_sc', 'person_ql', 'person_qa',
-            'person_sd', 'person_wpd', 'person_pp', 'person_ce', 'person_te',
+            'person_sd', 'person_pp', 'person_ce', 'person_te',
             'acceptor', 'linked_production',
         ),
         pk=pk
@@ -388,7 +375,6 @@ def production_detail(request, pk):
             ('PP',  checklist_before.confirm_pp),
             ('CE',  checklist_before.confirm_ce),
             ('QA',  checklist_before.confirm_qa),
-            ('WPD', checklist_before.confirm_wpd),
             ('SD',  checklist_before.confirm_sd),
         ]
 
@@ -472,7 +458,6 @@ def _all_sig_fields(prod):
         ('QL',  'sig_ql',  prod.person_ql),
         ('QA',  'sig_qa',  prod.person_qa),
         ('SD',  'sig_sd',  prod.person_sd),
-        ('WPD', 'sig_wpd', prod.person_wpd),
         ('PP',  'sig_pp',  prod.person_pp),
         ('CE',  'sig_ce',  prod.person_ce),
         ('Technologia', 'sig_te', prod.person_te),
@@ -739,7 +724,7 @@ def send_production_email(request, pk):
     # Reszta zespołu przypisanego do tej konkretnej produkcji
     team_fields = [
         'person_rd', 'person_sc', 'person_ql', 'person_qa',
-        'person_sd', 'person_wpd', 'person_pp', 'person_ce', 'person_te',
+        'person_sd', 'person_pp', 'person_ce', 'person_te',
     ]
     for field in team_fields:
         person = getattr(prod, field)
@@ -872,7 +857,7 @@ def _production_team_recipients(prod):
     )
     team_fields = [
         'person_rd', 'person_sc', 'person_ql', 'person_qa',
-        'person_sd', 'person_wpd', 'person_pp', 'person_ce', 'person_te',
+        'person_sd', 'person_pp', 'person_ce', 'person_te',
     ]
     for field in team_fields:
         person = getattr(prod, field)
@@ -1171,7 +1156,7 @@ def user_bulk_import(request):
 
 def _dept_lookup():
     """Mapuje kod działu albo jego etykietę (bez rozróżniania wielkości liter)
-    na kod działu, np. {'rd': 'RD', 'r&d': 'RD', 'wpd': 'WPD', ...}."""
+    na kod działu, np. {'rd': 'RD', 'r&d': 'RD', 'sd': 'SD', ...}."""
     lookup = {}
     for code, label in DEPT_CHOICES:
         lookup[code.strip().lower()] = code

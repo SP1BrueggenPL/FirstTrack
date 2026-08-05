@@ -120,7 +120,7 @@
     <div class="card-header"><i class="bi bi-pen me-2"></i>Podpisy – osoby które jeszcze się nie podpisały</div>
     <div class="card-body">
       {{ form.sig_rd }}{{ form.sig_sc }}{{ form.sig_ql }}{{ form.sig_qa }}
-      {{ form.sig_sd }}{{ form.sig_wpd }}{{ form.sig_pp }}{{ form.sig_ce }}{{ form.sig_te }}
+      {{ form.sig_sd }}{{ form.sig_pp }}{{ form.sig_ce }}{{ form.sig_te }}
       {% if unsigned_sig_fields %}
       <div class="row g-3">
         {% for role, field_name, person in unsigned_sig_fields %}

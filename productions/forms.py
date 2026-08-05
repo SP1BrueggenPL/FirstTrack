@@ -180,8 +180,8 @@ class FirstProductionForm(forms.ModelForm):
             'scope', 'data_produkcji', 'zmiany', 'layout', 'typ_produkcji', 'komentarz',
             'fert_number', 'rd_number', 'recipe', 'crm_project_nr',
             'person_rd', 'person_sc', 'person_ql', 'person_qa',
-            'person_sd', 'person_wpd', 'person_pp', 'person_ce', 'person_te',
-            'acceptor', 'acceptor_email',
+            'person_sd', 'person_pp', 'person_ce', 'person_te',
+            'acceptor',
         ]
         widgets = {
             'sap_zlecenie':   _fc('np. 11333525'),
@@ -202,13 +202,10 @@ class FirstProductionForm(forms.ModelForm):
             'person_ql':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
             'person_qa':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
             'person_sd':      forms.Select(attrs={'class': 'form-select form-select-sm person-select', 'id': 'id_person_sd'}),
-            'person_wpd':     forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
             'person_pp':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
             'person_ce':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
             'person_te':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
             'acceptor':       forms.Select(attrs={'class': 'form-select', 'id': 'id_acceptor'}),
-            'acceptor_email': forms.EmailInput(attrs={'class': 'form-control', 'id': 'id_acceptor_email',
-                                                       'placeholder': 'Auto-uzupełniany z konta'}),
         }
 
     def __init__(self, *args, user=None, **kwargs):
@@ -217,8 +214,8 @@ class FirstProductionForm(forms.ModelForm):
         # Ogranicz listy do właściwych działów
         depts = {
             'person_rd': 'RD', 'person_sc': 'SC', 'person_ql': 'QL',
-            'person_qa': 'QA', 'person_sd': 'SD', 'person_wpd': 'WPD',
-            'person_pp': 'PP', 'person_ce': 'CE', 'person_te': 'TE',
+            'person_qa': 'QA', 'person_sd': 'SD', 'person_pp': 'PP',
+            'person_ce': 'CE', 'person_te': 'TE',
         }
         for field_name, dept in depts.items():
             self.fields[field_name].queryset = (
@@ -335,7 +332,6 @@ class ChecklistBeforeForm(forms.ModelForm):
             'confirm_pp':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
             'confirm_ce':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
             'confirm_qa':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
-            'confirm_wpd': forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
             'confirm_sd':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
         }
 
@@ -350,7 +346,6 @@ _SIG_WIDGETS = {
     'sig_ql':  forms.HiddenInput(),
     'sig_qa':  forms.HiddenInput(),
     'sig_sd':  forms.HiddenInput(),
-    'sig_wpd': forms.HiddenInput(),
     'sig_pp':  forms.HiddenInput(),
     'sig_ce':  forms.HiddenInput(),
     'sig_te':  forms.HiddenInput(),
@@ -372,7 +367,7 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
             'sample_start', 'sample_middle', 'sample_end',
             'comparison_benchmark', 'comparison_lab', 'comparison_reference',
             'yield_kg', 'yield_takty', 'uwagi',
-            'sig_rd', 'sig_sc', 'sig_ql', 'sig_qa', 'sig_sd', 'sig_wpd', 'sig_pp', 'sig_ce', 'sig_te',
+            'sig_rd', 'sig_sc', 'sig_ql', 'sig_qa', 'sig_sd', 'sig_pp', 'sig_ce', 'sig_te',
         ]
         widgets = {
             **_SIG_WIDGETS,
@@ -388,7 +383,7 @@ class ChecklistAfterPackagingForm(forms.ModelForm):
     class Meta:
         model = ChecklistAfter
         fields = [
-            'sig_rd', 'sig_sc', 'sig_ql', 'sig_qa', 'sig_sd', 'sig_wpd', 'sig_pp', 'sig_ce', 'sig_te',
+            'sig_rd', 'sig_sc', 'sig_ql', 'sig_qa', 'sig_sd', 'sig_pp', 'sig_ce', 'sig_te',
             'photo_1', 'photo_2', 'photo_3', 'photo_4', 'umk_count',
         ]
         widgets = {

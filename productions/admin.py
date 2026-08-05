@@ -44,7 +44,7 @@ class FirstProductionAdmin(admin.ModelAdmin):
     list_filter  = ['status', 'typ_produkcji', 'layout', 'data_produkcji']
     search_fields = ['sap_zlecenie', 'sap_material', 'product_name']
     raw_id_fields = ['person_rd', 'person_sc', 'person_ql', 'person_qa',
-                     'person_sd', 'person_wpd', 'person_pp', 'person_ce', 'person_te',
+                     'person_sd', 'person_pp', 'person_ce', 'person_te',
                      'acceptor', 'linked_production', 'linked_by']
     inlines = [ChecklistBeforeInline, ChecklistAfterInline]
 

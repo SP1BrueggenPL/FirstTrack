@@ -280,7 +280,7 @@ class UserFormAndBulkImportTests(TestCase):
         ws = wb.active
         ws.append(['Imię i nazwisko', 'Email', 'Dział', 'Numer chip'])
         ws.append(['Jan Kowalski', 'jan.k@example.com', 'R&D', 4821])
-        ws.append(['Ewa Nowak', 'ewa.n@example.com', 'WPD', '04822'])
+        ws.append(['Ewa Nowak', 'ewa.n@example.com', 'PP', '04822'])
         ws.append(['Zły Wiersz', 'zly@example.com', 'NieistniejacyDzial', '04823'])
         buf = BytesIO()
         wb.save(buf)
@@ -301,4 +301,4 @@ class UserFormAndBulkImportTests(TestCase):
         self.assertEqual(jan.profile.department, 'RD')
 
         ewa = User.objects.get(email='ewa.n@example.com')
-        self.assertEqual(ewa.profile.department, 'WPD')
+        self.assertEqual(ewa.profile.department, 'PP')

@@ -14,7 +14,6 @@ DEPT_CHOICES = [
     ('QL',  'QL'),
     ('QA',  'QA'),
     ('SD',  'SD'),
-    ('WPD', 'WPD'),
     ('PP',  'PP'),
     ('CE',  'CE'),
     ('TE',  'Technologia'),
@@ -124,7 +123,6 @@ class FirstProduction(models.Model):
     person_ql  = _person_fk('QL',  'prod_ql',  'QL')
     person_qa  = _person_fk('QA',  'prod_qa',  'QA')
     person_sd  = _person_fk('SD',  'prod_sd',  'SD')
-    person_wpd = _person_fk('WPD', 'prod_wpd', 'WPD')
     person_pp  = _person_fk('PP',  'prod_pp',  'PP')
     person_ce  = _person_fk('CE',  'prod_ce',  'CE')
     person_te  = _person_fk('TE',  'prod_te',  'Technologia')
@@ -217,7 +215,6 @@ class ChecklistBefore(models.Model):
     confirm_pp  = models.CharField('Podpis PP',  max_length=100, blank=True)
     confirm_ce  = models.CharField('Podpis CE',  max_length=100, blank=True)
     confirm_qa  = models.CharField('Podpis QA',  max_length=100, blank=True)
-    confirm_wpd = models.CharField('Podpis WPD', max_length=100, blank=True)
     confirm_sd  = models.CharField('Podpis SD',  max_length=100, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     created_at   = models.DateTimeField(auto_now_add=True)
@@ -249,7 +246,6 @@ class ChecklistAfter(models.Model):
     person_ql  = models.CharField('QL',   max_length=100, blank=True)
     person_qa  = models.CharField('QA',   max_length=100, blank=True)
     person_sd  = models.CharField('SD',   max_length=100, blank=True)
-    person_wpd = models.CharField('WPD',  max_length=100, blank=True)
     person_pp  = models.CharField('PP',   max_length=100, blank=True)
     person_ce  = models.CharField('CE',   max_length=100, blank=True)
     person_te  = models.CharField('Technologia', max_length=100, blank=True)
@@ -287,7 +283,6 @@ class ChecklistAfter(models.Model):
     sig_ql  = models.TextField('Podpis QL',   blank=True)
     sig_qa  = models.TextField('Podpis QA',   blank=True)
     sig_sd  = models.TextField('Podpis SD',   blank=True)
-    sig_wpd = models.TextField('Podpis WPD',  blank=True)
     sig_pp  = models.TextField('Podpis PP',   blank=True)
     sig_ce  = models.TextField('Podpis CE',   blank=True)
     sig_te  = models.TextField('Podpis Technologia', blank=True)
