@@ -302,3 +302,96 @@ class UserFormAndBulkImportTests(TestCase):
 
         ewa = User.objects.get(email='ewa.n@example.com')
         self.assertEqual(ewa.profile.department, 'PP')
+
+
+class UserDeleteTests(TestCase):
+    """Usuwanie kont: tylko admin, nigdy własne konto."""
+
+    def setUp(self):
+        self.admin = _make_user('admin', 'SD')
+        self.admin.is_staff = True
+        self.admin.save()
+        self.other = _make_user('other', 'QA')
+
+    def test_staff_can_delete_other_user(self):
+        self.client.force_login(self.admin)
+        resp = self.client.post(f'/uzytkownicy/{self.other.pk}/usun/')
+        self.assertRedirects(resp, '/uzytkownicy/')
+        self.assertFalse(User.objects.filter(pk=self.other.pk).exists())
+
+    def test_staff_cannot_delete_own_account(self):
+        self.client.force_login(self.admin)
+        resp = self.client.post(f'/uzytkownicy/{self.admin.pk}/usun/')
+        self.assertRedirects(resp, '/uzytkownicy/')
+        self.assertTrue(User.objects.filter(pk=self.admin.pk).exists())
+
+    def test_non_staff_cannot_delete_user(self):
+        self.client.force_login(self.other)
+        resp = self.client.post(f'/uzytkownicy/{self.admin.pk}/usun/')
+        self.assertRedirects(resp, '/uzytkownicy/')
+        self.assertTrue(User.objects.filter(pk=self.admin.pk).exists())
+
+    def test_user_list_has_no_login_column(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get('/uzytkownicy/')
+        self.assertNotContains(resp, '<th>Login</th>')
+
+
+class ProductionEditLinkingTests(TestCase):
+    """Powiązanie z pakowaniem jest też dostępne w formularzu edycji
+    produkcji, a zapis wraca na tę samą stronę (parametr 'next')."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.sensory = FirstProduction.objects.create(
+            sap_zlecenie='S1', product_name='Sensory', scope='sensory')
+        self.packaging = FirstProduction.objects.create(
+            sap_zlecenie='P1', product_name='Packaging', scope='packaging',
+            fert_number='F1', recipe='R1')
+
+    def test_edit_page_has_link_form_when_unlinked(self):
+        resp = self.client.get(f'/{self.sensory.pk}/edytuj/')
+        self.assertIsNotNone(resp.context['link_form'])
+        self.assertContains(resp, 'Dodaj pakownię')
+
+    def test_edit_page_has_no_link_form_when_already_linked(self):
+        self.sensory.linked_production = self.packaging
+        self.sensory.save(update_fields=['linked_production'])
+        resp = self.client.get(f'/{self.sensory.pk}/edytuj/')
+        self.assertIsNone(resp.context['link_form'])
+
+    def test_edit_page_has_no_link_form_for_full_scope(self):
+        full = FirstProduction.objects.create(
+            sap_zlecenie='F1', product_name='Full', scope='full')
+        resp = self.client.get(f'/{full.pk}/edytuj/')
+        self.assertIsNone(resp.context['link_form'])
+
+    def test_link_from_edit_page_redirects_back_to_edit(self):
+        edit_url = f'/{self.sensory.pk}/edytuj/'
+        resp = self.client.post(f'/{self.sensory.pk}/etap2/powiaz-pakowanie/', {
+            'packaging_production': self.packaging.pk,
+            'next': edit_url,
+        })
+        self.assertRedirects(resp, edit_url)
+        self.sensory.refresh_from_db()
+        self.assertEqual(self.sensory.linked_production_id, self.packaging.pk)
+
+    def test_unlink_from_edit_page_redirects_back_to_edit(self):
+        self.sensory.linked_production = self.packaging
+        self.sensory.save(update_fields=['linked_production'])
+        self.packaging.linked_production = self.sensory
+        self.packaging.save(update_fields=['linked_production'])
+        edit_url = f'/{self.sensory.pk}/edytuj/'
+        resp = self.client.post(f'/{self.sensory.pk}/etap2/odwiaz/', {'next': edit_url})
+        self.assertRedirects(resp, edit_url)
+        self.sensory.refresh_from_db()
+        self.assertIsNone(self.sensory.linked_production)
+
+    def test_unlink_without_next_falls_back_to_checklist(self):
+        self.sensory.linked_production = self.packaging
+        self.sensory.save(update_fields=['linked_production'])
+        self.packaging.linked_production = self.sensory
+        self.packaging.save(update_fields=['linked_production'])
+        resp = self.client.post(f'/{self.sensory.pk}/etap2/odwiaz/')
+        self.assertRedirects(resp, f'/{self.sensory.pk}/etap2/sensoryczne/')

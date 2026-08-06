@@ -314,9 +314,15 @@ def production_edit(request, pk):
                 prod.save(update_fields=['acceptor_email'])
             messages.success(request, 'Dane produkcji zaktualizowane.')
             return redirect('production_detail', pk=prod.pk)
+
+    link_form = None
+    if prod.is_sensory_only and not prod.linked_production:
+        link_form = LinkPackagingForm(production=prod)
+
     return render(request, 'productions/production_form.html', {
         'form': form, 'production': prod,
         'title': f'Edytuj: {prod.product_name}',
+        'link_form': link_form,
     })
 
 
@@ -524,6 +530,16 @@ def checklist_after_sensory(request, pk):
     })
 
 
+def _link_redirect_target(request, prod, default_view_name):
+    """Zarówno checklista sensoryczna, jak i formularz edycji produkcji mają
+    ten sam formularz powiązania z pakowaniem - po zapisaniu wracamy tam,
+    skąd przyszło żądanie, a nie zawsze na checklistę."""
+    next_url = request.POST.get('next', '')
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        return redirect(next_url)
+    return redirect(default_view_name, pk=prod.pk)
+
+
 @login_required
 @require_POST
 def link_packaging_production(request, pk):
@@ -532,7 +548,7 @@ def link_packaging_production(request, pk):
     prod = get_object_or_404(FirstProduction, pk=pk)
     if not prod.is_sensory_only:
         messages.error(request, 'Powiązanie pakowni jest dostępne tylko dla produkcji „tylko sensoryka".')
-        return redirect('checklist_after_sensory', pk=pk)
+        return _link_redirect_target(request, prod, 'checklist_after_sensory')
 
     form = LinkPackagingForm(request.POST, production=prod)
     if form.is_valid():
@@ -553,7 +569,7 @@ def link_packaging_production(request, pk):
         )
     else:
         messages.error(request, 'Nie udało się powiązać - wybierz zlecenie pakowania z listy.')
-    return redirect('checklist_after_sensory', pk=pk)
+    return _link_redirect_target(request, prod, 'checklist_after_sensory')
 
 
 @login_required
@@ -569,7 +585,8 @@ def unlink_production(request, pk):
     prod.linked_by = None
     prod.save(update_fields=['linked_production', 'linked_at', 'linked_by'])
     messages.success(request, 'Powiązanie zostało usunięte.')
-    return redirect('checklist_after_sensory' if prod.is_sensory_only else 'checklist_after_packaging', pk=pk)
+    default_view = 'checklist_after_sensory' if prod.is_sensory_only else 'checklist_after_packaging'
+    return _link_redirect_target(request, prod, default_view)
 
 
 # Etap II krok 2 – pakowanie
@@ -1077,7 +1094,14 @@ def _create_user_account(cleaned):
     # żeby ten sam numer działał do logowania w panelu /admin/.
     user.set_password(cleaned['chip_number'])
     user.save()
-    profile, _ = UserProfile.objects.get_or_create(user=user)
+    # `user.profile` (nie osobne `UserProfile.objects.get_or_create(...)`) -
+    # sygnał post_save utworzył już profil i przy tym ustawił na `user`
+    # cache relacji odwrotnej. Zapytanie przez osobny manager zwróciłoby ten
+    # sam wiersz z bazy, ale jako INNY obiekt Python - `user.profile` zostałby
+    # przy starym (puste dane) obiekcie w cache, więc np. w wynikach importu
+    # masowego (ten sam `user` w pamięci przez cały request) numer chipu i
+    # dział wyglądałyby na niewypełnione, mimo że w bazie są zapisane poprawnie.
+    profile = user.profile
     profile.department = cleaned['department']
     profile.chip_number = cleaned['chip_number']
     profile.save()
@@ -1131,6 +1155,22 @@ def user_edit(request, pk):
     return render(request, 'productions/user_form.html', {
         'form': form, 'edit_user': user, 'title': f'Edytuj: {user.get_full_name()}',
     })
+
+
+@login_required
+@require_POST
+def user_delete(request, pk):
+    if not request.user.is_staff:
+        messages.error(request, 'Brak uprawnień do usunięcia konta.')
+        return redirect('user_list')
+    user = get_object_or_404(User, pk=pk)
+    if user.pk == request.user.pk:
+        messages.error(request, 'Nie można usunąć własnego konta.')
+        return redirect('user_list')
+    name = user.get_full_name() or user.username
+    user.delete()
+    messages.success(request, f'Konto „{name}" zostało usunięte.')
+    return redirect('user_list')
 
 
 @login_required
