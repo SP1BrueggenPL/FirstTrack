@@ -9,4 +9,12 @@
 # Python renderer installed via requirements.txt like any other dependency -
 # no separate browser download or apt step needed here anymore.
 
+# Apply any pending Django migrations before serving traffic. This step was
+# missing before, so the production database schema silently drifted from
+# what the code expects (e.g. it kept a NOT NULL "phone" column on
+# UserProfile long after that field was removed from the model in migration
+# 0008), causing IntegrityError/500s on operations the local dev DB - which
+# always runs migrate - never showed.
+python manage.py migrate --noinput
+
 gunicorn firsttrack.wsgi --bind=0.0.0.0:8000
