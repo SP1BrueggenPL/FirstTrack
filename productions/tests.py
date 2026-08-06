@@ -93,6 +93,97 @@ class ScopeRoutingAndLinkingTests(TestCase):
         resp = self.client.get(f'/{self.packaging.pk}/etap2/pakowanie/')
         self.assertContains(resp, 'Sensoryka')
 
+    def test_completing_linked_packaging_redirects_back_to_sensory(self):
+        # Powiąż i wejdź na checklistę pakowania tak, jak robi to przycisk
+        # "Pakowanie (powiązane zlecenie)" ze strony produkcji sensorycznej -
+        # z parametrem next wskazującym z powrotem na tę stronę.
+        self.client.get(f'/{self.sensory.pk}/etap2/sensoryczne/')
+        self.client.post(f'/{self.sensory.pk}/etap2/powiaz-pakowanie/',
+                          {'packaging_production': self.packaging.pk})
+        next_url = f'/{self.sensory.pk}/'
+        resp = self.client.get(f'/{self.packaging.pk}/etap2/pakowanie/?next={next_url}')
+        self.assertContains(resp, f'value="{next_url}"')
+
+        packaging_items = self.packaging.checklist_after.packaging_items.all()
+        resp = self.client.post(f'/{self.packaging.pk}/etap2/pakowanie/', {
+            'next': next_url,
+            'packaging-TOTAL_FORMS': str(packaging_items.count()),
+            'packaging-INITIAL_FORMS': str(packaging_items.count()),
+            **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            'complete': '1',
+        })
+        self.assertRedirects(resp, next_url)
+
+
+class LinkedProductionCorrectionSyncTests(TestCase):
+    """Powiązana para sensoryka/pakowanie jest w praktyce jedną produkcją -
+    korekta i zwolnienie z jednej strony muszą synchronizować status i
+    checklistę drugiej."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.sensory = FirstProduction.objects.create(
+            sap_zlecenie='S1', product_name='Sensory', scope='sensory', person_sd=self.sd)
+        self.packaging = FirstProduction.objects.create(
+            sap_zlecenie='P1', product_name='Packaging', scope='packaging',
+            fert_number='F1', recipe='R1', person_sd=self.sd)
+
+        self.client.get(f'/{self.sensory.pk}/etap2/sensoryczne/')
+        self.client.post(f'/{self.sensory.pk}/etap2/powiaz-pakowanie/',
+                          {'packaging_production': self.packaging.pk})
+
+        self.sensory.refresh_from_db()
+        sensory_params = self.sensory.checklist_after.sensory_params.all()
+        self.client.post(f'/{self.sensory.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'next': '1',
+        })
+
+        self.client.get(f'/{self.packaging.pk}/etap2/pakowanie/')
+        self.packaging.refresh_from_db()
+        packaging_items = self.packaging.checklist_after.packaging_items.all()
+        self.client.post(f'/{self.packaging.pk}/etap2/pakowanie/', {
+            'packaging-TOTAL_FORMS': str(packaging_items.count()),
+            'packaging-INITIAL_FORMS': str(packaging_items.count()),
+            **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            'complete': '1',
+        })
+        self.sensory.refresh_from_db()
+        self.packaging.refresh_from_db()
+
+    def test_correction_from_sensory_targeting_packaging_resets_linked_side(self):
+        resp = self.client.post(f'/{self.sensory.pk}/etap3/', {
+            'decision': 'correction',
+            'correction_comment': 'Zle opakowanie',
+            'correction_return_stage': 'packaging',
+            'acceptance_signature': '',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.sensory.refresh_from_db()
+        self.packaging.refresh_from_db()
+        self.assertEqual(self.sensory.status, 'etap2')
+        self.assertEqual(self.packaging.status, 'etap2')
+        packaging_ca = self.packaging.checklist_after
+        packaging_ca.refresh_from_db()
+        self.assertIsNone(packaging_ca.completed_at)
+        self.assertTrue(all(pi.status == '' for pi in packaging_ca.packaging_items.all()))
+
+    def test_release_from_sensory_also_releases_linked_packaging(self):
+        resp = self.client.post(f'/{self.sensory.pk}/etap3/', {
+            'decision': 'accept',
+            'acceptance_signature': '',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.sensory.refresh_from_db()
+        self.packaging.refresh_from_db()
+        self.assertEqual(self.sensory.status, 'zwolniona')
+        self.assertEqual(self.packaging.status, 'zwolniona')
+        self.assertTrue(self.packaging.checklist_after.final_acceptance)
+
 
 class SapPrefillDedupeTests(TestCase):
     """AI-odczytane zlecenie SAP, które już jest w systemie, nie jest dodawane

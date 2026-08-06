@@ -79,6 +79,7 @@
 
 <form method="post" enctype="multipart/form-data">
   {% csrf_token %}
+  {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
   {{ packaging_fs.management_form }}
 
   <!-- Checklista pakowania -->
