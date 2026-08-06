@@ -154,7 +154,6 @@ class ReleaseDecisionWorkflowTests(TestCase):
 
     def test_correction_resets_checklist_and_notifies_without_releasing(self):
         resp = self.client.post(f'/{self.prod.pk}/etap3/', {
-            'umk_count': '42',
             'decision': 'correction',
             'correction_comment': 'Zla etykieta',
             'correction_return_stage': 'packaging',
@@ -172,8 +171,9 @@ class ReleaseDecisionWorkflowTests(TestCase):
         self.assertIn('Zla etykieta', correction_log.body)
 
     def test_accept_releases_and_email_has_umk_and_material(self):
+        # Liczba UMK (42) została ustawiona w Etapie II (pakowanie) w setUp -
+        # Etap III już nie pyta o nią, ale wartość powinna przejść do maila.
         resp = self.client.post(f'/{self.prod.pk}/etap3/', {
-            'umk_count': '50',
             'decision': 'accept',
             'acceptance_signature': '',
         })
@@ -182,12 +182,11 @@ class ReleaseDecisionWorkflowTests(TestCase):
         self.assertEqual(self.prod.status, 'zwolniona')
         release_log = EmailLog.objects.filter(production=self.prod, subject__icontains='Zwolniona').last()
         self.assertIsNotNone(release_log)
-        self.assertIn('50', release_log.body)
+        self.assertIn('42', release_log.body)
         self.assertIn(self.prod.sap_material, release_log.body)
 
     def test_conditional_requires_comment(self):
         resp = self.client.post(f'/{self.prod.pk}/etap3/', {
-            'umk_count': '42',
             'decision': 'conditional',
             'acceptance_signature': '',
         })
@@ -199,6 +198,24 @@ class ReleaseDecisionWorkflowTests(TestCase):
             EmailLog.objects.filter(production=self.prod, subject__icontains='Pakowanie zaakceptowane').count(),
             0,
         )
+
+    def test_etap3_form_has_no_umk_count_input(self):
+        resp = self.client.get(f'/{self.prod.pk}/etap3/')
+        self.assertNotIn('umk_count', resp.context['form'].fields)
+        self.assertContains(resp, '42')  # wartość z Etapu II jest tylko wyświetlana
+
+    def test_umk_count_is_pulled_from_etap1_additional_samples(self):
+        prod = FirstProduction.objects.create(
+            sap_zlecenie='33333333', sap_material='4444', product_name='Test2', scope='full',
+            person_sd=self.sd)
+        self.client.post(f'/{prod.pk}/etap1/', {
+            'additional_samples_status': 'tak',
+            'additional_samples_count': '7',
+            'complete': '1',
+        })
+        self.client.get(f'/{prod.pk}/etap2/sensoryczne/')
+        prod.refresh_from_db()
+        self.assertEqual(prod.checklist_after.umk_count, '7')
 
 
 class SapPrefillScopeTests(TestCase):

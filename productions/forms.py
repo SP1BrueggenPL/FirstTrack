@@ -400,8 +400,11 @@ class ChecklistAfterAcceptanceForm(forms.ModelForm):
 
     class Meta:
         model = ChecklistAfter
+        # Liczba UMK do śluzy nie jest już wpisywana tutaj - pochodzi z
+        # Etapu I ("Wymagane dodatkowe próbki dla klienta? Ilość:") i jest
+        # tylko wyświetlana (patrz checklist_after_acceptance.html).
         fields = [
-            'photo_1', 'photo_2', 'photo_3', 'photo_4', 'umk_count',
+            'photo_1', 'photo_2', 'photo_3', 'photo_4',
             'decision', 'conditional_comment',
             'correction_comment', 'correction_return_stage',
             'acceptance_date', 'acceptance_signature',
@@ -414,7 +417,6 @@ class ChecklistAfterAcceptanceForm(forms.ModelForm):
             'correction_comment':   forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 2,
                                                             'placeholder': 'Co należy poprawić?'}),
             'correction_return_stage': forms.Select(attrs={'class': 'form-select form-select-sm'}),
-            'umk_count': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Liczba UMK'}),
             'photo_1': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),
             'photo_2': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),
             'photo_3': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),

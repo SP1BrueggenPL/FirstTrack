@@ -31,8 +31,9 @@
         </div>
         {% endwith %}{% endfor %}
         <div class="col-md-4">
-          <label class="fw-semibold small">Liczba UMK do śluzy</label>
-          {{ form.umk_count }}
+          <label class="fw-semibold small d-block">Liczba UMK do śluzy</label>
+          <span class="fw-semibold">{{ checklist.umk_count|default:"–" }}</span>
+          <div class="form-text small">Pochodzi z Etapu I („Wymagane dodatkowe próbki dla klienta?").</div>
         </div>
       </div>
     </div>

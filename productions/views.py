@@ -319,6 +319,11 @@ def production_edit(request, pk):
     link_form = None
     if prod.is_sensory_only and not prod.linked_production:
         link_form = LinkPackagingForm(production=prod)
+        # Formularz łączenia jest zadeklarowany w szablonie poza głównym
+        # <form> tej strony (zagnieżdżone <form> są nieprawidłowym HTML-em i
+        # psują submit obu formularzy) - to pole musi więc wskazywać na
+        # niego przez atrybut form=, żeby jego wartość została wysłana.
+        link_form.fields['packaging_production'].widget.attrs['form'] = 'link-packaging-form'
 
     return render(request, 'productions/production_form.html', {
         'form': form, 'production': prod,
@@ -436,6 +441,10 @@ def _get_or_create_checklist_after(prod):
             packaging_line=prod.packaging_line or '',
             yield_kg=cb.planned_yield_kg if cb else '',
             yield_takty=cb.planned_yield_takty if cb else '',
+            # Liczba UMK do śluzy pochodzi z Etapu I ("Wymagane dodatkowe
+            # próbki dla klienta? Ilość:") - nie jest już wpisywana ręcznie
+            # w Etapie III.
+            umk_count=cb.additional_samples_count if cb else '',
         )
         instance.save()
     else:
@@ -453,6 +462,9 @@ def _get_or_create_checklist_after(prod):
             if not instance.yield_takty and cb.planned_yield_takty:
                 instance.yield_takty = cb.planned_yield_takty
                 update_fields.append('yield_takty')
+            if not instance.umk_count and cb.additional_samples_count:
+                instance.umk_count = cb.additional_samples_count
+                update_fields.append('umk_count')
         if update_fields:
             instance.save(update_fields=update_fields)
     return instance
