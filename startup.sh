@@ -17,4 +17,11 @@
 # always runs migrate - never showed.
 python manage.py migrate --noinput
 
-gunicorn firsttrack.wsgi --bind=0.0.0.0:8000
+# Bez --workers gunicorn startuje z 1 workerem, czyli cała aplikacja jest w
+# praktyce jednowątkowa - jedno wolniejsze żądanie (np. duży import Excela,
+# generowanie PDF) blokuje kolejkę dla wszystkich innych użytkowników, którzy
+# po 30s (domyślny --timeout) dostają 500 mimo że ich strona nie ma nic
+# wspólnego z tym, co faktycznie się wykonuje. To był rzeczywisty powód
+# zgłoszeń "500 praktycznie wszędzie" widocznych w Log Streamie jako
+# "WORKER TIMEOUT" / "SIGKILL".
+gunicorn firsttrack.wsgi --bind=0.0.0.0:8000 --workers 3 --timeout 60
