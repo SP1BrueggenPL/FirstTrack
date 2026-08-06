@@ -92,6 +92,53 @@
           {{ form.komentarz }}
         </div>
       </div>
+
+      {% if production and production.is_sensory_only %}
+      <hr>
+      <div class="{% if production.linked_production %}border-info{% else %}border-warning{% endif %}" style="border-left:3px solid; padding-left:10px;">
+        <label class="form-label fw-semibold small d-block mb-1">
+          <i class="bi bi-box-seam me-1"></i>Pakowanie (powiązane zlecenie)
+          {% if production.linked_production %}<span class="badge bg-info ms-1">Powiązano</span>{% else %}<span class="badge bg-warning text-dark ms-1">Brak powiązania</span>{% endif %}
+        </label>
+        {% if production.linked_production %}
+          <p class="small mb-2">
+            Checklista pakowania jest prowadzona w powiązanym zleceniu
+            <a href="{% url 'checklist_after_packaging' production.linked_production.pk %}" class="fw-semibold">
+              {{ production.linked_production.product_name }} (zlecenie {{ production.linked_production.sap_zlecenie|default:"–" }})
+            </a>.
+            Powiązano po numerze zlecenia SAP
+            {% if production.linked_by %}przez {{ production.linked_by.get_full_name }}{% endif %}
+            {% if production.linked_at %}· {{ production.linked_at|date:"d.m.Y H:i" }}{% endif %}.
+          </p>
+          <form method="post" action="{% url 'unlink_production' production.pk %}"
+                onsubmit="return confirm('Usunąć powiązanie z pakowaniem?')">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'production_edit' production.pk %}">
+            <button type="submit" class="btn btn-outline-danger btn-sm">
+              <i class="bi bi-link-45deg me-1"></i>Usuń powiązanie
+            </button>
+          </form>
+        {% else %}
+          <p class="text-muted small mb-2">
+            Ta produkcja nie ma jeszcze powiązanego zlecenia pakowania. Wyszukaj zlecenie
+            „tylko pakowanie" po numerze SAP i powiąż je.
+          </p>
+          {% if link_form %}
+          <form method="post" action="{% url 'link_packaging_production' production.pk %}" class="d-flex gap-2 align-items-start flex-wrap">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'production_edit' production.pk %}">
+            <div style="min-width:280px">{{ link_form.packaging_production }}</div>
+            <button type="submit" class="btn btn-success btn-sm">
+              <i class="bi bi-plus-lg me-1"></i>Dodaj pakownię
+            </button>
+          </form>
+          {% if link_form.packaging_production.field.queryset.count == 0 %}
+          <div class="text-muted small mt-2">Brak dostępnych, niepowiązanych zleceń „tylko pakowanie".</div>
+          {% endif %}
+          {% endif %}
+        {% endif %}
+      </div>
+      {% endif %}
     </div>
   </div>
 
