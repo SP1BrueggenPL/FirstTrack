@@ -3,7 +3,7 @@ import json
 from django.contrib.auth.models import User
 from django.test import TestCase
 
-from .models import EmailLog, FirstProduction
+from .models import EmailLog, FirstProduction, UserProfile
 
 
 def _make_user(username, dept, email=None):
@@ -337,6 +337,24 @@ class UserFormAndBulkImportTests(TestCase):
         jan.refresh_from_db()
         self.assertEqual(jan.profile.department, 'QA')
         self.assertEqual(jan.profile.chip_number, '05555')
+
+    def test_bulk_import_update_handles_legacy_user_without_profile(self):
+        # Konta z czasu przed dodaniem modelu UserProfile (albo z innego
+        # powodu bez profilu) nie mogą wywalać importu błędem
+        # RelatedObjectDoesNotExist przy próbie ich zaktualizowania.
+        legacy = User.objects.create_user(
+            username='legacy', email='legacy@example.com',
+            first_name='Legacy', last_name='User')
+        UserProfile.objects.filter(user=legacy).delete()
+
+        upload = self._make_upload([['Legacy User', 'legacy@example.com', 'QA', '09999']])
+        resp = self.client.post('/uzytkownicy/import/', {'excel_file': upload})
+        results = resp.context['results']
+        self.assertEqual(len(results['updated']), 1)
+        self.assertEqual(len(results['errors']), 0)
+        legacy.refresh_from_db()
+        self.assertEqual(legacy.profile.department, 'QA')
+        self.assertEqual(legacy.profile.chip_number, '09999')
 
     def test_bulk_import_allows_blank_chip_number(self):
         upload = self._make_upload([['Ola Bez Chipu', 'ola@example.com', 'QA', '']])
