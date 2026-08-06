@@ -53,10 +53,6 @@
                  title="Edytuj dane">
                 <i class="bi bi-pencil"></i>
               </a>
-              <a href="{% url 'user_chip' u.pk %}" class="btn btn-outline-warning btn-sm py-0 px-2"
-                 title="Zmień numer chip">
-                <i class="bi bi-key"></i>
-              </a>
               {% if request.user.is_staff and u.pk != request.user.pk %}
               <form method="post" action="{% url 'user_delete' u.pk %}"
                     onsubmit="return confirm('Na pewno usunąć konto {{ u.get_full_name|default:u.username }}? Operacja jest nieodwracalna.')">

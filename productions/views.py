@@ -25,7 +25,8 @@ from .forms import (
     ChecklistAfterSensoryForm, ChecklistAfterPackagingForm, ChecklistAfterAcceptanceForm,
     ChecklistAfterHeaderForm, LinkPackagingForm,
     SensoryParamFormSet, PackagingItemFormSet,
-    UserCreateForm, UserEditForm, UserChipForm, UserBulkImportForm, NotificationRecipientForm,
+    UserCreateForm, UserEditForm, UserChipForm, UserImportRowForm, UserBulkImportForm,
+    NotificationRecipientForm,
 )
 
 logger = logging.getLogger(__name__)
@@ -1074,6 +1075,17 @@ def user_list(request):
     })
 
 
+def _sync_chip_password(user, chip_number):
+    """Numer chip zastępuje hasło – ustawiany też jako hasło Django, żeby ten
+    sam numer działał do logowania w panelu /admin/. Bez numeru (osoba jeszcze
+    nie ma przypisanego chipu) konto dostaje hasło nieużywalne, zamiast
+    hashować pusty string jako prawdziwe hasło."""
+    if chip_number:
+        user.set_password(chip_number)
+    else:
+        user.set_unusable_password()
+
+
 def _create_user_account(cleaned):
     """Tworzy konto + profil na podstawie cleaned_data z UserCreateForm
     (albo równoważnego słownika, np. przy imporcie masowym z Excela)."""
@@ -1090,9 +1102,7 @@ def _create_user_account(cleaned):
         first_name=cleaned['first_name'],
         last_name=cleaned['last_name'],
     )
-    # Numer chip zastępuje hasło – ustawiany też jako hasło Django,
-    # żeby ten sam numer działał do logowania w panelu /admin/.
-    user.set_password(cleaned['chip_number'])
+    _sync_chip_password(user, cleaned['chip_number'])
     user.save()
     # `user.profile` (nie osobne `UserProfile.objects.get_or_create(...)`) -
     # sygnał post_save utworzył już profil i przy tym ustawił na `user`
@@ -1101,6 +1111,21 @@ def _create_user_account(cleaned):
     # przy starym (puste dane) obiekcie w cache, więc np. w wynikach importu
     # masowego (ten sam `user` w pamięci przez cały request) numer chipu i
     # dział wyglądałyby na niewypełnione, mimo że w bazie są zapisane poprawnie.
+    profile = user.profile
+    profile.department = cleaned['department']
+    profile.chip_number = cleaned['chip_number']
+    profile.save()
+    return user
+
+
+def _update_user_account(user, cleaned):
+    """Nadpisuje dane istniejącego konta (dopasowanego po emailu) wartościami
+    z wiersza importu, żeby powtórny import tego samego arkusza aktualizował
+    istniejące osoby, a nie wywalał się na 'ten adres email już istnieje'."""
+    user.first_name = cleaned['first_name']
+    user.last_name = cleaned['last_name']
+    _sync_chip_password(user, cleaned['chip_number'])
+    user.save()
     profile = user.profile
     profile.department = cleaned['department']
     profile.chip_number = cleaned['chip_number']
@@ -1189,9 +1214,11 @@ def user_bulk_import(request):
             else:
                 if results['created']:
                     messages.success(request, f"Utworzono {len(results['created'])} kont.")
+                if results['updated']:
+                    messages.success(request, f"Zaktualizowano {len(results['updated'])} istniejących kont.")
                 if results['errors']:
                     messages.warning(request, f"Pominięto {len(results['errors'])} wierszy - patrz szczegóły poniżej.")
-                if not results['created'] and not results['errors']:
+                if not results['created'] and not results['updated'] and not results['errors']:
                     messages.error(request, 'Plik nie zawierał żadnych wierszy z danymi.')
 
     return render(request, 'productions/user_bulk_import.html', {
@@ -1243,7 +1270,7 @@ def _import_users_from_excel(excel_file):
             'Skontaktuj się z administratorem systemu.'
         ) from e
 
-    created, errors = [], []
+    created, updated, errors = [], [], []
     try:
         wb = openpyxl.load_workbook(excel_file, data_only=True)
     except Exception as e:
@@ -1254,7 +1281,7 @@ def _import_users_from_excel(excel_file):
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
-        return {'created': created, 'errors': errors}
+        return {'created': created, 'updated': updated, 'errors': errors}
 
     header = [str(c or '').strip().lower() for c in rows[0]]
     col_map = {'imię i nazwisko': 0, 'imie i nazwisko': 0, 'email': 1, 'dział': 2, 'dzial': 2, 'numer chip': 3}
@@ -1288,13 +1315,20 @@ def _import_users_from_excel(excel_file):
                 errors.append({'row': row_num, 'reason': f'Nieznany dział: „{dept_raw}".'})
                 continue
 
-            form = UserCreateForm(data={
+            # Dopasowanie po emailu - jeśli konto już istnieje, wiersz
+            # aktualizuje je, a nie wywala się na "email już istnieje" (co
+            # pozwala uruchamiać ten sam arkusz wielokrotnie, np. po
+            # poprawkach albo dopisaniu nowych osób).
+            existing_user = User.objects.filter(email=email).first()
+            form = UserImportRowForm(data={
                 'full_name': full_name, 'email': email,
                 'department': dept_code, 'chip_number': chip,
-            })
+            }, existing_user=existing_user)
             if form.is_valid():
-                user = _create_user_account(form.cleaned_data)
-                created.append(user)
+                if existing_user:
+                    updated.append(_update_user_account(existing_user, form.cleaned_data))
+                else:
+                    created.append(_create_user_account(form.cleaned_data))
             else:
                 reason = '; '.join(f'{f}: {"; ".join(e)}' for f, e in form.errors.items())
                 errors.append({'row': row_num, 'reason': reason})
@@ -1306,7 +1340,7 @@ def _import_users_from_excel(excel_file):
             logger.error('Błąd importu wiersza %s z Excela: %s', row_num, e, exc_info=True)
             errors.append({'row': row_num, 'reason': f'Nieoczekiwany błąd: {e}'})
 
-    return {'created': created, 'errors': errors}
+    return {'created': created, 'updated': updated, 'errors': errors}
 
 
 @login_required
