@@ -185,6 +185,39 @@ class LinkedProductionCorrectionSyncTests(TestCase):
         self.assertTrue(self.packaging.checklist_after.final_acceptance)
 
 
+class LinkedPdfDataTests(TestCase):
+    """PDF Etapu II/III dla powiązanej pary sensoryka/pakowanie musi łączyć
+    dane z obu produkcji - inaczej strona pakowania nie widziała parametrów
+    sensorycznych (i odwrotnie)."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.sensory = FirstProduction.objects.create(
+            sap_zlecenie='S1', product_name='Sensory', scope='sensory')
+        self.packaging = FirstProduction.objects.create(
+            sap_zlecenie='P1', product_name='Packaging', scope='packaging',
+            fert_number='F1', recipe='R1')
+        self.client.get(f'/{self.sensory.pk}/etap2/sensoryczne/')
+        self.client.get(f'/{self.packaging.pk}/etap2/pakowanie/')
+        self.client.post(f'/{self.sensory.pk}/etap2/powiaz-pakowanie/',
+                          {'packaging_production': self.packaging.pk})
+
+    def test_packaging_side_pdf_data_includes_linked_sensory_params(self):
+        from .pdf_views import _linked_checklist_data
+        self.packaging.refresh_from_db()
+        data = _linked_checklist_data(self.packaging)
+        self.assertGreater(len(data['sensory']), 0)
+        self.assertGreater(len(data['packaging']), 0)
+
+    def test_sensory_side_pdf_data_includes_linked_packaging_items(self):
+        from .pdf_views import _linked_checklist_data
+        self.sensory.refresh_from_db()
+        data = _linked_checklist_data(self.sensory)
+        self.assertGreater(len(data['sensory']), 0)
+        self.assertGreater(len(data['packaging']), 0)
+
+
 class SapPrefillDedupeTests(TestCase):
     """AI-odczytane zlecenie SAP, które już jest w systemie, nie jest dodawane
     drugi raz."""

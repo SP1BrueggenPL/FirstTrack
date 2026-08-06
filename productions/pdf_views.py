@@ -63,14 +63,40 @@ def _build_team_sigs(prod, ca):
     return sigs
 
 
+def _linked_checklist_data(prod):
+    """Powiązana para sensoryka/pakowanie jest w praktyce jedną produkcją -
+    parametry sensoryczne i pozycje pakowania fizycznie żyją na tej z dwóch
+    produkcji, która faktycznie ją wykonuje. PDF-y (Etap II/III) muszą więc
+    złożyć dane z obu stron, a nie tylko z tej, dla której PDF jest
+    generowany - inaczej strona pakowania nie widziała danych sensorycznych
+    (i odwrotnie)."""
+    sensory_prod, packaging_prod = prod, prod
+    if prod.linked_production:
+        if prod.is_sensory_only:
+            packaging_prod = prod.linked_production
+        elif prod.is_packaging_only:
+            sensory_prod = prod.linked_production
+
+    sensory_ca   = getattr(sensory_prod, 'checklist_after', None)
+    packaging_ca = getattr(packaging_prod, 'checklist_after', None)
+
+    team_sigs = _build_team_sigs(sensory_prod, sensory_ca) if sensory_ca else []
+    if packaging_prod.pk != sensory_prod.pk and packaging_ca:
+        team_sigs = team_sigs + _build_team_sigs(packaging_prod, packaging_ca)
+
+    return {
+        'sensory': sensory_ca.sensory_params.all() if sensory_ca else [],
+        'packaging': packaging_ca.packaging_items.all() if packaging_ca else [],
+        'team_sigs': team_sigs,
+    }
+
+
 def _generate_pdf_etap3(prod, ca):
     """Używane też przy wysyłce maila ze zwolnieniem (załącznik PDF)."""
     cb = getattr(prod, 'checklist_before', None)
     return _render_pdf('productions/pdf/etap3.html', {
         'production': prod, 'cb': cb, 'ca': ca,
-        'sensory': ca.sensory_params.all(),
-        'packaging': ca.packaging_items.all(),
-        'team_sigs': _build_team_sigs(prod, ca),
+        **_linked_checklist_data(prod),
     })
 
 
@@ -95,9 +121,7 @@ def pdf_etap2(request, pk):
     ca = getattr(prod, 'checklist_after', None)
     context = {
         'production': prod, 'ca': ca,
-        'sensory': ca.sensory_params.all() if ca else [],
-        'packaging': ca.packaging_items.all() if ca else [],
-        'team_sigs': _build_team_sigs(prod, ca) if ca else [],
+        **_linked_checklist_data(prod),
     }
     try:
         pdf = _render_pdf('productions/pdf/etap2.html', context)
