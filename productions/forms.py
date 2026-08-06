@@ -5,15 +5,6 @@ from .models import (
     SensoryParam, PackagingItem, UserProfile, NotificationRecipient, DEPT_CHOICES,
 )
 
-# Pola "Szczegółowe informacje" (poza komentarzem) i "Numery" - dane podstawowe,
-# które są obowiązkiem działu R&D: jeśli osobę otwierającą edycję przypisano do
-# działu RD, te pola stają się wymagane przed zapisem. Dla innych działów zostają
-# opcjonalne (mogą, ale nie muszą ich uzupełnić).
-RD_REQUIRED_FIELDS = [
-    'data_produkcji', 'zmiany', 'layout', 'typ_produkcji',
-    'rd_number', 'recipe', 'crm_project_nr',
-]
-
 ITEM_STATUS_CHOICES = [('', '–'), ('tak', 'Tak'), ('nie', 'Nie'), ('nd', 'N/D')]
 
 
@@ -70,10 +61,7 @@ class UserCreateForm(forms.Form):
     chip_number = forms.CharField(label='Numer chip (5 cyfr)', widget=_CHIP_WIDGET)
 
     def clean_full_name(self):
-        value = (self.cleaned_data.get('full_name') or '').strip()
-        if len(value.split()) < 2:
-            raise forms.ValidationError('Podaj imię i nazwisko.')
-        return value
+        return (self.cleaned_data.get('full_name') or '').strip()
 
     def clean_email(self):
         email = self.cleaned_data['email']
@@ -124,10 +112,7 @@ class UserEditForm(forms.Form):
     is_staff   = forms.BooleanField(label='Admin', required=False)
 
     def clean_full_name(self):
-        value = (self.cleaned_data.get('full_name') or '').strip()
-        if len(value.split()) < 2:
-            raise forms.ValidationError('Podaj imię i nazwisko.')
-        return value
+        return (self.cleaned_data.get('full_name') or '').strip()
 
     def clean(self):
         cleaned = super().clean()
@@ -255,25 +240,12 @@ class FirstProductionForm(forms.ModelForm):
         )
         self.fields['acceptor'].empty_label = '– wybierz akceptującego –'
         self.fields['acceptor'].required = False
-
-        # Osoba z działu R&D musi uzupełnić wszystkie dane podstawowe (poza
-        # komentarzem) przed zapisem - dla innych działów pola zostają opcjonalne.
-        profile = getattr(user, 'profile', None) if user is not None else None
-        if profile and profile.department == 'RD':
-            for field_name in RD_REQUIRED_FIELDS:
-                self.fields[field_name].required = True
-
-    def clean_fert_number(self):
-        value = self.cleaned_data.get('fert_number', '')
-        if self.cleaned_data.get('scope') == 'packaging' and not value:
-            raise forms.ValidationError('Numer FERT jest wymagany dla produkcji „tylko pakowanie".')
-        return value
-
-    def clean_recipe(self):
-        value = self.cleaned_data.get('recipe', '')
-        if self.cleaned_data.get('scope') in ('packaging', 'sensory') and not value:
-            raise forms.ValidationError('Numer receptury jest wymagany dla tego zakresu produkcji.')
-        return value
+        # Żadne z pól "Szczegółowe informacje"/"Numery" (poza krótkim tekstem
+        # materiału) nie jest wymagane - niezależnie od działu osoby
+        # wypełniającej formularz, można zapisać produkcję z niekompletnymi
+        # danymi i uzupełnić je później.
+        for field_name in ('fert_number', 'recipe'):
+            self.fields[field_name].required = False
 
     def _user_label(self, user):
         return user.get_full_name() or user.username

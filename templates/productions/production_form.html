@@ -155,7 +155,7 @@
         </div>
         <div class="col-md-3">
           <label class="form-label fw-semibold small">
-            Receptura powiązana{% if form.recipe.field.required %} *{% endif %}<span id="recipe-required-mark" class="d-none"> *</span>
+            Receptura powiązana{% if form.recipe.field.required %} *{% endif %}
           </label>
           {{ form.recipe }}
           {% if form.recipe.errors %}<div class="text-danger small">{{ form.recipe.errors }}</div>{% endif %}
@@ -232,16 +232,13 @@
 
 {% block extra_js %}
 <script>
-// Numer FERT jest istotny tylko dla produkcji "tylko pakowanie"; numer
-// receptury jest wymagany dla "tylko pakowanie" i "tylko sensoryka" (pole
-// pozostaje widoczne dla każdego zakresu, zmienia się tylko oznaczenie *).
-const scopeSelect      = document.getElementById('id_scope');
-const fertWrap         = document.getElementById('fert-number-wrap');
-const recipeRequiredEl = document.getElementById('recipe-required-mark');
+// Numer FERT jest istotny tylko dla produkcji "tylko pakowanie" (pole
+// pozostaje widoczne dla każdego zakresu, tu tylko chowamy je dla innych).
+const scopeSelect = document.getElementById('id_scope');
+const fertWrap    = document.getElementById('fert-number-wrap');
 function toggleScopeFields() {
   if (!scopeSelect) return;
   if (fertWrap) fertWrap.style.display = (scopeSelect.value === 'packaging') ? '' : 'none';
-  if (recipeRequiredEl) recipeRequiredEl.classList.toggle('d-none', scopeSelect.value === 'full');
 }
 if (scopeSelect) {
   scopeSelect.addEventListener('change', toggleScopeFields);

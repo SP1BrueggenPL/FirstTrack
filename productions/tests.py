@@ -17,21 +17,21 @@ def _make_user(username, dept, email=None):
 
 
 class FirstProductionFormRequiredFieldsTests(TestCase):
-    """Pola podstawowe (poza komentarzem) są wymagane wyłącznie dla osób z RD."""
+    """Pola "Szczegółowe informacje"/"Numery" (poza krótkim tekstem materiału)
+    są opcjonalne dla każdego działu i każdego zakresu produkcji - produkcję
+    można zapisać z niekompletnymi danymi i uzupełnić je później."""
 
     def setUp(self):
         self.rd = _make_user('rduser', 'RD')
         self.sd = _make_user('sduser', 'SD')
 
-    def test_rd_must_fill_detail_and_number_fields(self):
+    def test_rd_can_save_with_minimal_data(self):
         self.client.force_login(self.rd)
         resp = self.client.post('/nowa/', {
             'sap_zlecenie': '1', 'sap_material': '2', 'product_name': 'X', 'scope': 'full',
         })
-        self.assertEqual(resp.status_code, 200)
-        for field in ('data_produkcji', 'zmiany', 'layout', 'typ_produkcji',
-                      'rd_number', 'recipe', 'crm_project_nr'):
-            self.assertIn(field, resp.context['form'].errors)
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.assertTrue(FirstProduction.objects.filter(sap_zlecenie='1').exists())
 
     def test_other_department_fields_stay_optional(self):
         self.client.force_login(self.sd)
@@ -41,23 +41,21 @@ class FirstProductionFormRequiredFieldsTests(TestCase):
         self.assertEqual(resp.status_code, 302)
         self.assertTrue(FirstProduction.objects.filter(sap_zlecenie='1').exists())
 
-    def test_packaging_only_requires_fert_and_recipe(self):
+    def test_packaging_only_does_not_require_fert_or_recipe(self):
         self.client.force_login(self.sd)
         resp = self.client.post('/nowa/', {
             'sap_zlecenie': '1', 'sap_material': '2', 'product_name': 'X', 'scope': 'packaging',
         })
-        self.assertEqual(resp.status_code, 200)
-        self.assertIn('fert_number', resp.context['form'].errors)
-        self.assertIn('recipe', resp.context['form'].errors)
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.assertTrue(FirstProduction.objects.filter(sap_zlecenie='1').exists())
 
-    def test_sensory_only_requires_recipe_not_fert(self):
+    def test_sensory_only_does_not_require_recipe(self):
         self.client.force_login(self.sd)
         resp = self.client.post('/nowa/', {
             'sap_zlecenie': '1', 'sap_material': '2', 'product_name': 'X', 'scope': 'sensory',
         })
-        self.assertEqual(resp.status_code, 200)
-        self.assertIn('recipe', resp.context['form'].errors)
-        self.assertNotIn('fert_number', resp.context['form'].errors)
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.assertTrue(FirstProduction.objects.filter(sap_zlecenie='1').exists())
 
 
 class ScopeRoutingAndLinkingTests(TestCase):
@@ -270,6 +268,18 @@ class UserFormAndBulkImportTests(TestCase):
     def test_user_form_has_no_phone_field(self):
         resp = self.client.get('/uzytkownicy/nowy/')
         self.assertNotContains(resp, 'name="phone"')
+
+    def test_create_user_accepts_single_word_name(self):
+        resp = self.client.post('/uzytkownicy/nowy/', {
+            'full_name': 'Prince',
+            'email': 'prince@example.com',
+            'department': 'QA',
+            'chip_number': '22222',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        user = User.objects.get(email='prince@example.com')
+        self.assertEqual(user.first_name, 'Prince')
+        self.assertEqual(user.last_name, '')
 
     def test_bulk_import_creates_users_and_reports_errors(self):
         import openpyxl
