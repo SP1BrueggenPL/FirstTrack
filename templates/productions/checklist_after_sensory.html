@@ -82,8 +82,9 @@
     <div class="card-body">
       <div class="row g-3 mb-3">
         <div class="col-md-3">
-          <label class="form-label fw-semibold small">Linia pakująca</label>
-          {{ form.packaging_line }}
+          <label class="form-label fw-semibold small d-block">Linia pakująca</label>
+          <span class="fw-semibold">{{ production.packaging_line|default:"–" }}</span>
+          <div class="form-text small">Pochodzi z Etapu I.</div>
         </div>
         <div class="col-md-3">
           <label class="form-label fw-semibold small">Data produkcji</label>

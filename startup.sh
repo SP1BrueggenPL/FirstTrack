@@ -5,9 +5,23 @@
 # Chromium binary, which needed a ~300MB download (and often apt/root access
 # for --with-deps) on every fresh instance. That download/install step kept
 # failing or getting stuck on App Service, permanently breaking PDF export
-# ("PDF nie drukuje się"). PDFs are now rendered with WeasyPrint, a pure-
-# Python renderer installed via requirements.txt like any other dependency -
-# no separate browser download or apt step needed here anymore.
+# ("PDF nie drukuje się"). PDFs are now rendered with WeasyPrint, a
+# mostly-Python renderer installed via requirements.txt like any other
+# dependency - but it still needs a few native system libraries (Pango/
+# cairo/GDK-PixBuf) that pip can't install. The App Service Python base image
+# doesn't ship them, so WeasyPrint kept failing with "biblioteka WeasyPrint
+# (lub jej zależność systemowa) nie jest zainstalowana". The container's
+# filesystem outside /home isn't persisted between restarts, so this has to
+# run on every startup, not just once.
+if command -v apt-get >/dev/null 2>&1; then
+  apt-get update -qq && apt-get install -y --no-install-recommends \
+    libpango-1.0-0 libpangoft2-1.0-0 libpangocairo-1.0-0 \
+    libgdk-pixbuf2.0-0 libcairo2 shared-mime-info \
+    > /tmp/weasyprint-apt-install.log 2>&1
+  if [ $? -ne 0 ]; then
+    echo "WARNING: apt-get install dla zależności WeasyPrint nie powiodło się - patrz /tmp/weasyprint-apt-install.log. Generowanie PDF może nie działać."
+  fi
+fi
 
 # Apply any pending Django migrations before serving traffic. This step was
 # missing before, so the production database schema silently drifted from

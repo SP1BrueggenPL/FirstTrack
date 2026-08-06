@@ -284,6 +284,14 @@ class LinkPackagingForm(forms.Form):
 # ──────────────────────────────────────────────────────────
 
 class ChecklistBeforeForm(forms.ModelForm):
+    # Linia pakująca to pole FirstProduction.packaging_line, nie ChecklistBefore -
+    # wpisywana tutaj (Etap I), a nie w checkliście Etapu II (patrz widoki
+    # checklist_before/_get_or_create_checklist_after).
+    packaging_line = forms.CharField(
+        label='Linia pakująca', max_length=50, required=False,
+        widget=forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
+    )
+
     class Meta:
         model = ChecklistBefore
         fields = '__all__'
@@ -356,8 +364,11 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
 
     class Meta:
         model = ChecklistAfter
+        # Linia pakująca nie jest już wpisywana tutaj - pochodzi z Etapu I
+        # (ChecklistBeforeForm.packaging_line, zapisywane na
+        # FirstProduction.packaging_line) i jest tylko wyświetlana.
         fields = [
-            'packaging_line', 'production_date',
+            'production_date',
             'sample_start', 'sample_middle', 'sample_end',
             'comparison_benchmark', 'comparison_lab', 'comparison_reference',
             'yield_kg', 'yield_takty', 'uwagi',
@@ -365,7 +376,6 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
         ]
         widgets = {
             **_SIG_WIDGETS,
-            'packaging_line': forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
             'yield_kg':       forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'kg/h'}),
             'yield_takty':    forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'takty'}),
             'uwagi':          forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 3}),
@@ -400,8 +410,11 @@ class ChecklistAfterAcceptanceForm(forms.ModelForm):
 
     class Meta:
         model = ChecklistAfter
+        # Liczba UMK do śluzy nie jest już wpisywana tutaj - pochodzi z
+        # Etapu I ("Wymagane dodatkowe próbki dla klienta? Ilość:") i jest
+        # tylko wyświetlana (patrz checklist_after_acceptance.html).
         fields = [
-            'photo_1', 'photo_2', 'photo_3', 'photo_4', 'umk_count',
+            'photo_1', 'photo_2', 'photo_3', 'photo_4',
             'decision', 'conditional_comment',
             'correction_comment', 'correction_return_stage',
             'acceptance_date', 'acceptance_signature',
@@ -414,7 +427,6 @@ class ChecklistAfterAcceptanceForm(forms.ModelForm):
             'correction_comment':   forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 2,
                                                             'placeholder': 'Co należy poprawić?'}),
             'correction_return_stage': forms.Select(attrs={'class': 'form-select form-select-sm'}),
-            'umk_count': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Liczba UMK'}),
             'photo_1': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),
             'photo_2': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),
             'photo_3': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),

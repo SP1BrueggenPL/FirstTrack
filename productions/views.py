@@ -4,6 +4,7 @@ import logging
 from .pdf_views import pdf_etap1, pdf_etap2, pdf_etap3
 from django.core.cache import cache
 from django.shortcuts import render, get_object_or_404, redirect
+from django.urls import reverse
 from django.contrib import messages
 from django.contrib.auth import authenticate, login as auth_login
 from django.contrib.auth.models import User
@@ -319,6 +320,11 @@ def production_edit(request, pk):
     link_form = None
     if prod.is_sensory_only and not prod.linked_production:
         link_form = LinkPackagingForm(production=prod)
+        # Formularz łączenia jest zadeklarowany w szablonie poza głównym
+        # <form> tej strony (zagnieżdżone <form> są nieprawidłowym HTML-em i
+        # psują submit obu formularzy) - to pole musi więc wskazywać na
+        # niego przez atrybut form=, żeby jego wartość została wysłana.
+        link_form.fields['packaging_production'].widget.attrs['form'] = 'link-packaging-form'
 
     return render(request, 'productions/production_form.html', {
         'form': form, 'production': prod,
@@ -403,16 +409,19 @@ def checklist_before(request, pk):
     prod     = get_object_or_404(FirstProduction, pk=pk)
     instance = getattr(prod, 'checklist_before', None)
 
-    form = ChecklistBeforeForm(instance=instance)
+    form = ChecklistBeforeForm(instance=instance, initial={'packaging_line': prod.packaging_line})
     if request.method == 'POST':
         form = ChecklistBeforeForm(request.POST, instance=instance)
         if form.is_valid():
             cb = form.save(commit=False)
             cb.production = prod
+            # Linia pakująca to pole FirstProduction, nie ChecklistBefore -
+            # wpisywana tutaj (Etap I), więc zapisywana na produkcji.
+            prod.packaging_line = form.cleaned_data.get('packaging_line', '')
             if 'complete' in request.POST:
                 cb.completed_at = timezone.now()
                 prod.status = 'etap1'
-                prod.save()
+            prod.save()
             cb.save()
             messages.success(request, 'Checklista przed produkcją zapisana.')
             return redirect('production_detail', pk=pk)
@@ -436,6 +445,10 @@ def _get_or_create_checklist_after(prod):
             packaging_line=prod.packaging_line or '',
             yield_kg=cb.planned_yield_kg if cb else '',
             yield_takty=cb.planned_yield_takty if cb else '',
+            # Liczba UMK do śluzy pochodzi z Etapu I ("Wymagane dodatkowe
+            # próbki dla klienta? Ilość:") - nie jest już wpisywana ręcznie
+            # w Etapie III.
+            umk_count=cb.additional_samples_count if cb else '',
         )
         instance.save()
     else:
@@ -453,6 +466,9 @@ def _get_or_create_checklist_after(prod):
             if not instance.yield_takty and cb.planned_yield_takty:
                 instance.yield_takty = cb.planned_yield_takty
                 update_fields.append('yield_takty')
+            if not instance.umk_count and cb.additional_samples_count:
+                instance.umk_count = cb.additional_samples_count
+                update_fields.append('umk_count')
         if update_fields:
             instance.save(update_fields=update_fields)
     return instance
@@ -600,12 +616,18 @@ def checklist_after_packaging(request, pk):
     instance = _get_or_create_checklist_after(prod)
     packaging_fs = PackagingItemFormSet(queryset=instance.packaging_items.all(), prefix='packaging')
     form = ChecklistAfterPackagingForm(instance=instance)
+    # Dostępne też ze strony powiązanej produkcji sensorycznej ("Pakowanie
+    # (powiązane zlecenie)") - next pozwala po zatwierdzeniu wrócić tam,
+    # skąd użytkownik faktycznie przyszedł, a nie zawsze na tę (pakującą)
+    # produkcję.
+    next_url = request.GET.get('next', '')
 
     all_sigs = _all_sig_fields(prod)
     unsigned = [(role, fname, person) for role, fname, person in all_sigs
                 if person and not getattr(instance, fname)]
 
     if request.method == 'POST':
+        next_url = request.POST.get('next', '')
         form         = ChecklistAfterPackagingForm(request.POST, request.FILES, instance=instance)
         packaging_fs = PackagingItemFormSet(request.POST, queryset=instance.packaging_items.all(), prefix='packaging')
         if form.is_valid() and packaging_fs.is_valid():
@@ -620,8 +642,8 @@ def checklist_after_packaging(request, pk):
             # trafia dodatkowo do końcowego maila ze zwolnieniem (Etap III).
             messages.success(request, 'Etap II zatwierdzony.' if 'complete' in request.POST else 'Checklista pakowania zapisana.')
             if 'complete' in request.POST:
-                return redirect('production_detail', pk=pk)
-            return redirect('checklist_after_packaging', pk=pk)
+                return _link_redirect_target(request, prod, 'production_detail')
+            return redirect(f"{reverse('checklist_after_packaging', args=[pk])}{'?next=' + next_url if next_url else ''}")
 
     linked_sensory = None
     if prod.is_packaging_only and prod.linked_production:
@@ -640,6 +662,7 @@ def checklist_after_packaging(request, pk):
         'unsigned_sig_fields': unsigned,
         'linked_sensory': linked_sensory,
         'step': 2,
+        'next_url': next_url,
     })
 
 
@@ -647,6 +670,19 @@ def checklist_after_packaging(request, pk):
 # Etap III – Decyzja SD (Akceptacja / Akceptacja warunkowa / Do korekty)
 #            oraz zwolnienie do sprzedaży
 # ──────────────────────────────────────────────
+
+def _linked_target_for_stage(prod, stage):
+    """Dla powiązanej pary sensoryka/pakowanie dane danego etapu (sensoryczne
+    albo pakowania) fizycznie żyją na tej z dwóch produkcji, która faktycznie
+    go wykonuje - dla produkcji "tylko sensoryka" to parametry sensoryczne są
+    u niej, ale pozycje pakowania są u powiązanej produkcji "tylko
+    pakowanie" (i odwrotnie). Zwraca właściwą produkcję do zresetowania."""
+    if stage == 'packaging' and prod.is_sensory_only and prod.linked_production:
+        return prod.linked_production
+    if stage == 'sensory' and prod.is_packaging_only and prod.linked_production:
+        return prod.linked_production
+    return prod
+
 
 @login_required
 def release_production(request, pk):
@@ -666,12 +702,26 @@ def release_production(request, pk):
                 ca.completed_at = None
                 ca.save()
                 stage = ca.correction_return_stage
+                reset_prod = _linked_target_for_stage(prod, stage)
+                reset_ca = _get_or_create_checklist_after(reset_prod)
                 if stage == 'sensory':
-                    instance.sensory_params.all().update(status='', uwagi='', korekta='', kto='', kiedy='')
+                    reset_ca.sensory_params.all().update(status='', uwagi='', korekta='', kto='', kiedy='')
                 elif stage == 'packaging':
-                    instance.packaging_items.all().update(status='', uwagi='', korekta='', kto='', kiedy='')
+                    reset_ca.packaging_items.all().update(status='', uwagi='', korekta='', kto='', kiedy='')
                 prod.status = 'etap2'
                 prod.save()
+                # Powiązana produkcja sensoryka/pakowanie to w praktyce jedna
+                # produkcja - korekta jednej strony musi też zresetować
+                # status/ukończenie checklisty drugiej, inaczej po ponownym
+                # zatwierdzeniu tej drugiej strony ta pierwsza (z której
+                # wysłano do korekty) zostałaby błędnie oznaczona jako
+                # ukończona/zaakceptowana, mimo że wciąż czeka na poprawki.
+                if reset_prod.pk != prod.pk:
+                    reset_ca.completed_at = None
+                    reset_ca.final_acceptance = False
+                    reset_ca.save(update_fields=['completed_at', 'final_acceptance'])
+                    reset_prod.status = 'etap2'
+                    reset_prod.save(update_fields=['status'])
                 messages.warning(
                     request,
                     'Produkcja skierowana do korekty - checklista wybranego etapu '
@@ -684,6 +734,14 @@ def release_production(request, pk):
                 ca.save()
                 prod.status = 'zwolniona'
                 prod.save()
+                if prod.linked_production:
+                    linked = prod.linked_production
+                    linked_ca = _get_or_create_checklist_after(linked)
+                    linked_ca.final_acceptance = True
+                    linked_ca.acceptance_date = ca.acceptance_date
+                    linked_ca.save(update_fields=['final_acceptance', 'acceptance_date'])
+                    linked.status = 'zwolniona'
+                    linked.save(update_fields=['status'])
                 messages.success(request, f'Produkcja „{prod.product_name}" zwolniona do sprzedaży.')
                 _send_release_email(prod, ca)
             return redirect('production_detail', pk=pk)

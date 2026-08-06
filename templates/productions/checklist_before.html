@@ -23,7 +23,10 @@
         <div class="col-md-2"><strong>Zlecenie:</strong> {{ production.sap_zlecenie|default:"–" }}</div>
         <div class="col-md-2"><strong>Materiał:</strong> {{ production.sap_material|default:"–" }}</div>
         <div class="col-md-4"><strong>Produkt:</strong> {{ production.product_name }}</div>
-        {% if production.packaging_line %}<div class="col-md-2"><strong>Linia pakuj.:</strong> {{ production.packaging_line }}</div>{% endif %}
+        <div class="col-md-3 d-flex align-items-center gap-2">
+          <strong class="text-nowrap">Linia pakuj.:</strong>
+          {{ form.packaging_line }}
+        </div>
         <div class="w-100"></div>
         {% if production.person_rd %}<div class="col-auto"><strong>R&amp;D:</strong> {{ production.person_rd.get_full_name }}</div>{% endif %}
         {% if production.person_sc %}<div class="col-auto"><strong>SC:</strong> {{ production.person_sc.get_full_name }}</div>{% endif %}

@@ -110,28 +110,26 @@
             {% if production.linked_by %}przez {{ production.linked_by.get_full_name }}{% endif %}
             {% if production.linked_at %}· {{ production.linked_at|date:"d.m.Y H:i" }}{% endif %}.
           </p>
-          <form method="post" action="{% url 'unlink_production' production.pk %}"
-                onsubmit="return confirm('Usunąć powiązanie z pakowaniem?')">
-            {% csrf_token %}
-            <input type="hidden" name="next" value="{% url 'production_edit' production.pk %}">
-            <button type="submit" class="btn btn-outline-danger btn-sm">
-              <i class="bi bi-link-45deg me-1"></i>Usuń powiązanie
-            </button>
-          </form>
+          <!-- Formularz "unlink-production-form" jest zadeklarowany poza głównym
+               <form> tego widoku (HTML nie pozwala na zagnieżdżone <form>) -
+               ten przycisk łączy się z nim przez atrybut form=. -->
+          <button type="submit" form="unlink-production-form" class="btn btn-outline-danger btn-sm"
+                  onclick="return confirm('Usunąć powiązanie z pakowaniem?')">
+            <i class="bi bi-link-45deg me-1"></i>Usuń powiązanie
+          </button>
         {% else %}
           <p class="text-muted small mb-2">
             Ta produkcja nie ma jeszcze powiązanego zlecenia pakowania. Wyszukaj zlecenie
             „tylko pakowanie" po numerze SAP i powiąż je.
           </p>
           {% if link_form %}
-          <form method="post" action="{% url 'link_packaging_production' production.pk %}" class="d-flex gap-2 align-items-start flex-wrap">
-            {% csrf_token %}
-            <input type="hidden" name="next" value="{% url 'production_edit' production.pk %}">
+          <!-- Jak wyżej - "link-packaging-form" jest poza głównym <form>. -->
+          <div class="d-flex gap-2 align-items-start flex-wrap">
             <div style="min-width:280px">{{ link_form.packaging_production }}</div>
-            <button type="submit" class="btn btn-success btn-sm">
+            <button type="submit" form="link-packaging-form" class="btn btn-success btn-sm">
               <i class="bi bi-plus-lg me-1"></i>Dodaj pakownię
             </button>
-          </form>
+          </div>
           {% if link_form.packaging_production.field.queryset.count == 0 %}
           <div class="text-muted small mt-2">Brak dostępnych, niepowiązanych zleceń „tylko pakowanie".</div>
           {% endif %}
@@ -228,6 +226,25 @@
     {% endif %}
   </div>
 </form>
+
+{% if production and production.is_sensory_only %}
+<!-- Zamiast zagnieżdżać te formularze w powyższym <form> (co jest
+     nieprawidłowym HTML-em i psuje submit całej strony - przyciski w
+     zagnieżdżonych <form> trafiały do formularza edycji produkcji, a nie
+     tam gdzie trzeba), są zadeklarowane osobno tutaj, a przyciski/pole
+     wyboru w karcie "Szczegółowe informacje" łączą się z nimi przez
+     atrybut form=. -->
+<form method="post" action="{% url 'unlink_production' production.pk %}" id="unlink-production-form" class="d-none">
+  {% csrf_token %}
+  <input type="hidden" name="next" value="{% url 'production_edit' production.pk %}">
+</form>
+{% if link_form %}
+<form method="post" action="{% url 'link_packaging_production' production.pk %}" id="link-packaging-form" class="d-none">
+  {% csrf_token %}
+  <input type="hidden" name="next" value="{% url 'production_edit' production.pk %}">
+</form>
+{% endif %}
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
