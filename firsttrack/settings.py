@@ -92,6 +92,10 @@ if _database_url:
             'USER': _url.username,
             'PASSWORD': _url.password,
             'OPTIONS': {'sslmode': _sslmode},
+            # Reuse connections across requests instead of opening a new
+            # TLS-secured connection to Azure Postgres every time - that
+            # per-request handshake overhead adds up on every single page.
+            'CONN_MAX_AGE': 60,
         }
     }
     del _url
