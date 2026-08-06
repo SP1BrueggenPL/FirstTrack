@@ -1126,7 +1126,12 @@ def _update_user_account(user, cleaned):
     user.last_name = cleaned['last_name']
     _sync_chip_password(user, cleaned['chip_number'])
     user.save()
-    profile = user.profile
+    # get_or_create, nie `user.profile` - część starszych kont (z czasu przed
+    # dodaniem modelu UserProfile) nie ma jeszcze wiersza profilu, więc samo
+    # `user.profile` wywalałoby RelatedObjectDoesNotExist. `user` jest tu
+    # świeżo pobrany w tym samym wywołaniu, więc problem stałego cache z
+    # `_create_user_account` (patrz komentarz tam) nie ma zastosowania.
+    profile, _ = UserProfile.objects.get_or_create(user=user)
     profile.department = cleaned['department']
     profile.chip_number = cleaned['chip_number']
     profile.save()
