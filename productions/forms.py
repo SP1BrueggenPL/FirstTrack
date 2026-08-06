@@ -284,6 +284,14 @@ class LinkPackagingForm(forms.Form):
 # ──────────────────────────────────────────────────────────
 
 class ChecklistBeforeForm(forms.ModelForm):
+    # Linia pakująca to pole FirstProduction.packaging_line, nie ChecklistBefore -
+    # wpisywana tutaj (Etap I), a nie w checkliście Etapu II (patrz widoki
+    # checklist_before/_get_or_create_checklist_after).
+    packaging_line = forms.CharField(
+        label='Linia pakująca', max_length=50, required=False,
+        widget=forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
+    )
+
     class Meta:
         model = ChecklistBefore
         fields = '__all__'
@@ -356,8 +364,11 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
 
     class Meta:
         model = ChecklistAfter
+        # Linia pakująca nie jest już wpisywana tutaj - pochodzi z Etapu I
+        # (ChecklistBeforeForm.packaging_line, zapisywane na
+        # FirstProduction.packaging_line) i jest tylko wyświetlana.
         fields = [
-            'packaging_line', 'production_date',
+            'production_date',
             'sample_start', 'sample_middle', 'sample_end',
             'comparison_benchmark', 'comparison_lab', 'comparison_reference',
             'yield_kg', 'yield_takty', 'uwagi',
@@ -365,7 +376,6 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
         ]
         widgets = {
             **_SIG_WIDGETS,
-            'packaging_line': forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
             'yield_kg':       forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'kg/h'}),
             'yield_takty':    forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'takty'}),
             'uwagi':          forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 3}),

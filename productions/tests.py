@@ -218,6 +218,30 @@ class ReleaseDecisionWorkflowTests(TestCase):
         self.assertEqual(prod.checklist_after.umk_count, '7')
 
 
+class PackagingLineEtap1Tests(TestCase):
+    """Linia pakująca jest wpisywana w Etapie I (nie w checkliście Etapu II
+    sensorycznej/pakowania) i zapisywana na samej produkcji."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='55555555', sap_material='6666', product_name='Test3', scope='full')
+
+    def test_etap1_saves_packaging_line_on_production(self):
+        self.client.post(f'/{self.prod.pk}/etap1/', {
+            'packaging_line': 'L3', 'save': '1',
+        })
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.packaging_line, 'L3')
+
+    def test_etap2_sensory_form_has_no_packaging_line_input(self):
+        self.client.post(f'/{self.prod.pk}/etap1/', {'packaging_line': 'L3', 'save': '1'})
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.assertNotIn('packaging_line', resp.context['form'].fields)
+        self.assertContains(resp, 'L3')  # wyświetlana, nie do edycji
+
+
 class SapPrefillScopeTests(TestCase):
     """Wiersz z importu masowego może dostać zakres (scope) per wiersz;
     5-cyfrowy numer materiału domyślnie sugeruje 'tylko pakowanie'."""

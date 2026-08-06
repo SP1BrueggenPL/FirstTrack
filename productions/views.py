@@ -408,16 +408,19 @@ def checklist_before(request, pk):
     prod     = get_object_or_404(FirstProduction, pk=pk)
     instance = getattr(prod, 'checklist_before', None)
 
-    form = ChecklistBeforeForm(instance=instance)
+    form = ChecklistBeforeForm(instance=instance, initial={'packaging_line': prod.packaging_line})
     if request.method == 'POST':
         form = ChecklistBeforeForm(request.POST, instance=instance)
         if form.is_valid():
             cb = form.save(commit=False)
             cb.production = prod
+            # Linia pakująca to pole FirstProduction, nie ChecklistBefore -
+            # wpisywana tutaj (Etap I), więc zapisywana na produkcji.
+            prod.packaging_line = form.cleaned_data.get('packaging_line', '')
             if 'complete' in request.POST:
                 cb.completed_at = timezone.now()
                 prod.status = 'etap1'
-                prod.save()
+            prod.save()
             cb.save()
             messages.success(request, 'Checklista przed produkcją zapisana.')
             return redirect('production_detail', pk=pk)
