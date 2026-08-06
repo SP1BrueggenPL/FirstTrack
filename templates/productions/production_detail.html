@@ -299,7 +299,7 @@
             <a href="{% url 'pdf_etap3' production.pk %}" class="btn btn-outline-secondary btn-sm" target="_blank">
               <i class="bi bi-file-earmark-pdf me-1"></i>Pobierz PDF Etap III
             </a>
-          {% elif checklist_after and checklist_after.completed_at %}
+          {% elif etap2_ready %}
             <p class="text-muted small mb-3">Etap II zatwierdzony. Wypełnij akceptację SD i zwolnij produkcję.</p>
             <div class="d-flex gap-2 flex-wrap">
               <a href="{% url 'release_production' production.pk %}" class="btn btn-success btn-sm">
@@ -308,6 +308,12 @@
               <a href="{% url 'pdf_etap3' production.pk %}" class="btn btn-outline-secondary btn-sm" target="_blank">
                 <i class="bi bi-file-earmark-pdf me-1"></i>PDF
               </a>
+            </div>
+          {% elif checklist_after and checklist_after.completed_at and production.linked_production %}
+            <div class="alert alert-secondary py-2 small mb-0">
+              <i class="bi bi-lock me-1"></i>Ta strona ma ukończony Etap II - czeka na ukończenie checklisty
+              powiązanego zlecenia
+              <a href="{% url 'production_detail' production.linked_production.pk %}">{{ production.linked_production.product_name }}</a>.
             </div>
           {% else %}
             <div class="alert alert-secondary py-2 small mb-0">
@@ -319,5 +325,18 @@
     </div>
 
   </div>
+
+  {% if gallery_photos %}
+  <div class="card mt-3">
+    <div class="card-header"><i class="bi bi-images me-2"></i>Zdjęcia z pakowania/akceptacji</div>
+    <div class="card-body d-flex gap-2 flex-wrap">
+      {% for photo in gallery_photos %}
+      <a href="{{ photo.url }}" target="_blank">
+        <img src="{{ photo.url }}" class="rounded border" style="height:110px;object-fit:cover;">
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

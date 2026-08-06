@@ -391,12 +391,25 @@ def production_detail(request, pk):
             ('SD',  checklist_before.confirm_sd),
         ]
 
+    # Zdjęcia z akceptacji/pakowania - podgląd w samej aplikacji, nie tylko w
+    # mailu i PDF-ie. Dla powiązanej pary sensoryka/pakowanie zbieramy je z
+    # obu stron (patrz pdf_views._linked_checklist_data - ten sam pomysł).
+    gallery_checklists = [checklist_after]
+    if prod.linked_production:
+        gallery_checklists.append(getattr(prod.linked_production, 'checklist_after', None))
+    gallery_photos = [
+        getattr(ca, field) for ca in gallery_checklists if ca
+        for field in ('photo_1', 'photo_2', 'photo_3', 'photo_4') if getattr(ca, field)
+    ]
+
     return render(request, 'productions/production_detail.html', {
         'production': prod,
         'edit_form': edit_form,
         'checklist_before': checklist_before,
         'checklist_after':  checklist_after,
         'checklist_confirmations': confirmations,
+        'etap2_ready': _etap2_fully_done(prod),
+        'gallery_photos': gallery_photos,
     })
 
 
@@ -472,6 +485,21 @@ def _get_or_create_checklist_after(prod):
         if update_fields:
             instance.save(update_fields=update_fields)
     return instance
+
+
+def _etap2_fully_done(prod):
+    """Dla powiązanej pary sensoryka/pakowanie Etap II jest ukończony tylko
+    wtedy, gdy checklista OBU stron jest zamknięta - to w praktyce jedna
+    produkcja, więc nie można przejść do Etapu III jednej strony, gdy druga
+    wciąż czeka na swoją checklistę."""
+    ca = getattr(prod, 'checklist_after', None)
+    if not ca or not ca.completed_at:
+        return False
+    if prod.linked_production:
+        linked_ca = getattr(prod.linked_production, 'checklist_after', None)
+        if not linked_ca or not linked_ca.completed_at:
+            return False
+    return True
 
 
 def _all_sig_fields(prod):
@@ -727,6 +755,13 @@ def _linked_target_for_stage(prod, stage):
 def release_production(request, pk):
     prod     = get_object_or_404(FirstProduction, pk=pk)
     instance = _get_or_create_checklist_after(prod)
+    if not _etap2_fully_done(prod):
+        messages.error(
+            request,
+            'Etap III jest dostępny dopiero po ukończeniu checklisty Etapu II - '
+            'dla powiązanej pary sensoryka/pakowanie obu stron.',
+        )
+        return redirect('production_detail', pk=pk)
     form = ChecklistAfterAcceptanceForm(instance=instance)
 
     if request.method == 'POST':
@@ -1101,7 +1136,7 @@ def _send_release_email(prod, ca):
         '',
         f'Liczba UMK do śluzy: {ca.umk_count or "–"}',
         '',
-        'W załączniku: checklista końcowa (PDF) oraz zdjęcia z akceptacji.',
+        'W załączniku: checklista końcowa (PDF), ze zdjęciami z akceptacji.',
         '',
         '-- FirstTrack, H. & J. Brüggen KG --',
     ]
@@ -1110,19 +1145,16 @@ def _send_release_email(prod, ca):
     email = EmailMessage(subject=subject, body=body,
                          from_email=settings.DEFAULT_FROM_EMAIL, to=recipients)
     try:
+        # Zdjęcia z akceptacji są teraz wbudowane w PDF (patrz
+        # _linked_checklist_data/photo_uris), więc nie dołączamy ich już
+        # osobno jako surowych plików do maila - są zarówno w PDF, jak i w
+        # samej aplikacji (podgląd na stronie produkcji).
         from .pdf_views import _generate_pdf_etap3
         pdf_bytes = _generate_pdf_etap3(prod, ca)
         if pdf_bytes:
             email.attach(f'PP_{prod.sap_zlecenie}_Zwolnienie.pdf', pdf_bytes, 'application/pdf')
     except Exception as e:
         logger.error('Błąd generowania PDF do maila o zwolnieniu (mail zostanie wysłany bez PDF): %s', e)
-    try:
-        for field in ['photo_1', 'photo_2', 'photo_3', 'photo_4']:
-            photo = getattr(ca, field)
-            if photo:
-                email.attach_file(photo.path)
-    except Exception as e:
-        logger.error('Błąd dołączania zdjęć do maila o zwolnieniu: %s', e)
 
     _send_and_log(prod, subject, body, recipients, email_message=email)
 

@@ -383,6 +383,19 @@
 </table>
 {% endif %}{% endwith %}{% endif %}
 
+{% if photo_uris %}
+<table class="info-grid" style="margin-bottom:5px;">
+  <tr>
+    <td style="background:var(--light-bg);font-weight:bold;padding:2px 4px;">Zdjęcia z akceptacji:</td>
+  </tr>
+</table>
+<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">
+  {% for uri in photo_uris %}
+  <img src="{{ uri }}" style="max-height:140px;max-width:48%;border:1px solid #999;">
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="footer">
   <div><span class="label">Version:</span> 1</div>
   <div><span class="label">Valid until:</span> 08.01.2024</div>
