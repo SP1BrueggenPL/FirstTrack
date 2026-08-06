@@ -557,6 +557,43 @@ def _link_redirect_target(request, prod, default_view_name):
     return redirect(default_view_name, pk=prod.pk)
 
 
+# Pola FirstProduction współdzielone przez powiązaną parę sensoryka/pakowanie -
+# to w praktyce jedna produkcja/jeden zespół/jeden termin, tylko rozdzielona na
+# dwa zlecenia SAP. Nie kopiujemy sap_zlecenie/sap_material/product_name/scope
+# (te są różne dla każdej strony z definicji) ani fert_number (istotne tylko
+# dla pakowania).
+_SHARED_PRODUCTION_FIELDS = [
+    'data_produkcji', 'zmiany', 'layout', 'typ_produkcji', 'komentarz',
+    'packaging_line', 'rd_number', 'recipe', 'crm_project_nr',
+    'person_rd', 'person_sc', 'person_ql', 'person_qa',
+    'person_sd', 'person_pp', 'person_ce', 'person_te', 'acceptor',
+]
+
+# Pola ChecklistBefore kopiowane razem z powiązaniem (bez pk/production/
+# znaczników czasu - te muszą zostać własne dla docelowej produkcji).
+_CHECKLIST_BEFORE_SKIP_FIELDS = {'id', 'production', 'completed_at', 'created_at', 'updated_at'}
+
+
+def _copy_shared_production_data(source, target):
+    """Powiązana para sensoryka/pakowanie jest w praktyce jedną produkcją -
+    przy łączeniu kopiujemy na nowo powiązane zlecenie współdzielone dane
+    (szczegóły, zespół, checklistę Etapu I) ze zlecenia źródłowego, żeby nie
+    trzeba było wpisywać tych samych informacji dwa razy."""
+    for field in _SHARED_PRODUCTION_FIELDS:
+        setattr(target, field, getattr(source, field))
+    target.save(update_fields=_SHARED_PRODUCTION_FIELDS)
+
+    source_cb = getattr(source, 'checklist_before', None)
+    if source_cb is None:
+        return
+    target_cb = getattr(target, 'checklist_before', None) or ChecklistBefore(production=target)
+    for field in ChecklistBefore._meta.fields:
+        if field.name not in _CHECKLIST_BEFORE_SKIP_FIELDS:
+            setattr(target_cb, field.name, getattr(source_cb, field.name))
+    target_cb.production = target
+    target_cb.save()
+
+
 @login_required
 @require_POST
 def link_packaging_production(request, pk):
@@ -579,10 +616,12 @@ def link_packaging_production(request, pk):
         packaging_prod.linked_at = now
         packaging_prod.linked_by = request.user
         packaging_prod.save(update_fields=['linked_production', 'linked_at', 'linked_by'])
+        _copy_shared_production_data(prod, packaging_prod)
         messages.success(
             request,
             f'Powiązano z pakowaniem „{packaging_prod.product_name}" '
-            f'(zlecenie SAP {packaging_prod.sap_zlecenie or "–"}).',
+            f'(zlecenie SAP {packaging_prod.sap_zlecenie or "–"}) - dane szczegółowe '
+            f'i checklista Etapu I zostały skopiowane.',
         )
     else:
         messages.error(request, 'Nie udało się powiązać - wybierz zlecenie pakowania z listy.')

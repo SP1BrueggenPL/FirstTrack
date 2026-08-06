@@ -1,9 +1,10 @@
 import json
+from datetime import date
 
 from django.contrib.auth.models import User
 from django.test import TestCase
 
-from .models import EmailLog, FirstProduction, UserProfile
+from .models import ChecklistBefore, EmailLog, FirstProduction, UserProfile
 
 
 def _make_user(username, dept, email=None):
@@ -92,6 +93,31 @@ class ScopeRoutingAndLinkingTests(TestCase):
 
         resp = self.client.get(f'/{self.packaging.pk}/etap2/pakowanie/')
         self.assertContains(resp, 'Sensoryka')
+
+    def test_link_copies_shared_data_and_checklist_before(self):
+        self.sensory.data_produkcji = date(2026, 6, 1)
+        self.sensory.zmiany = '2 zmiany'
+        self.sensory.layout = 'L1'
+        self.sensory.crm_project_nr = 'CRM1'
+        self.sensory.save()
+        ChecklistBefore.objects.create(
+            production=self.sensory, order_updated_status='tak', pwpr_status='nie',
+            additional_samples_status='tak', additional_samples_count='5',
+        )
+
+        resp = self.client.post(f'/{self.sensory.pk}/etap2/powiaz-pakowanie/',
+                                 {'packaging_production': self.packaging.pk})
+        self.assertEqual(resp.status_code, 302)
+        self.packaging.refresh_from_db()
+        self.assertEqual(self.packaging.data_produkcji, date(2026, 6, 1))
+        self.assertEqual(self.packaging.zmiany, '2 zmiany')
+        self.assertEqual(self.packaging.layout, 'L1')
+        self.assertEqual(self.packaging.crm_project_nr, 'CRM1')
+
+        packaging_cb = self.packaging.checklist_before
+        self.assertEqual(packaging_cb.order_updated_status, 'tak')
+        self.assertEqual(packaging_cb.pwpr_status, 'nie')
+        self.assertEqual(packaging_cb.additional_samples_count, '5')
 
     def test_completing_linked_packaging_redirects_back_to_sensory(self):
         # Powiąż i wejdź na checklistę pakowania tak, jak robi to przycisk
