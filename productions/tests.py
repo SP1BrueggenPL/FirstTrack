@@ -303,6 +303,68 @@ class UserFormAndBulkImportTests(TestCase):
         ewa = User.objects.get(email='ewa.n@example.com')
         self.assertEqual(ewa.profile.department, 'PP')
 
+    @staticmethod
+    def _make_upload(rows):
+        import openpyxl
+        from io import BytesIO
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(['Imię i nazwisko', 'Email', 'Dział', 'Numer chip'])
+        for row in rows:
+            ws.append(row)
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return SimpleUploadedFile(
+            'users.xlsx', buf.read(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    def test_bulk_import_rerun_updates_existing_user_instead_of_erroring(self):
+        upload1 = self._make_upload([['Jan Kowalski', 'jan.k@example.com', 'RD', '04821']])
+        self.client.post('/uzytkownicy/import/', {'excel_file': upload1})
+        jan = User.objects.get(email='jan.k@example.com')
+        self.assertEqual(jan.profile.chip_number, '04821')
+
+        upload2 = self._make_upload([['Jan Kowalski', 'jan.k@example.com', 'QA', '05555']])
+        resp = self.client.post('/uzytkownicy/import/', {'excel_file': upload2})
+        results = resp.context['results']
+        self.assertEqual(len(results['created']), 0)
+        self.assertEqual(len(results['updated']), 1)
+        self.assertEqual(len(results['errors']), 0)
+        self.assertEqual(User.objects.filter(email='jan.k@example.com').count(), 1)
+        jan.refresh_from_db()
+        self.assertEqual(jan.profile.department, 'QA')
+        self.assertEqual(jan.profile.chip_number, '05555')
+
+    def test_bulk_import_allows_blank_chip_number(self):
+        upload = self._make_upload([['Ola Bez Chipu', 'ola@example.com', 'QA', '']])
+        resp = self.client.post('/uzytkownicy/import/', {'excel_file': upload})
+        results = resp.context['results']
+        self.assertEqual(len(results['created']), 1)
+        self.assertEqual(len(results['errors']), 0)
+        ola = User.objects.get(email='ola@example.com')
+        self.assertEqual(ola.profile.chip_number, '')
+        self.assertFalse(ola.has_usable_password())
+
+
+class AdminUserPasswordLinkRemovedTests(TestCase):
+    """Logowanie jest wyłącznie po numerze chip - w panelu /admin/ nie
+    powinno być już pola/ikony do (rozjeżdżającej się z chipem) zmiany
+    hasła Django."""
+
+    def setUp(self):
+        self.superuser = User.objects.create_superuser('root', 'root@example.com', 'x')
+        self.client.force_login(self.superuser)
+
+    def test_change_form_has_no_password_field_or_link(self):
+        target = _make_user('someone', 'QA')
+        resp = self.client.get(f'/admin/auth/user/{target.pk}/change/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, 'id_password')
+        self.assertNotContains(resp, 'password/')
+
 
 class UserDeleteTests(TestCase):
     """Usuwanie kont: tylko admin, nigdy własne konto."""

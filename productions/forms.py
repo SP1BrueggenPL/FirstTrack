@@ -91,6 +91,28 @@ class UserCreateForm(forms.Form):
         return cleaned
 
 
+class UserImportRowForm(UserCreateForm):
+    """Wariant UserCreateForm dla importu masowego z Excela: powtórny import
+    tego samego arkusza aktualizuje istniejące konto (dopasowane po emailu)
+    zamiast wywalać się na 'ten adres email już istnieje', a puste pole
+    numeru chip jest dopuszczalne - osoba jeszcze nie ma przypisanego chipu
+    (w interfejsie wyświetli się jako „–")."""
+    chip_number = forms.CharField(label='Numer chip (5 cyfr)', required=False, widget=_CHIP_WIDGET)
+
+    def __init__(self, *args, existing_user=None, **kwargs):
+        self._existing_user = existing_user
+        super().__init__(*args, **kwargs)
+
+    def clean_email(self):
+        return self.cleaned_data['email']
+
+    def clean_chip_number(self):
+        chip = (self.cleaned_data.get('chip_number') or '').strip()
+        if not chip:
+            return ''
+        return _clean_chip_number(chip, exclude_user=self._existing_user)
+
+
 class UserEditForm(forms.Form):
     full_name = forms.CharField(label='Imię i nazwisko', max_length=150,
                                 widget=_fc('np. Jan Kowalski', 'form-control'))

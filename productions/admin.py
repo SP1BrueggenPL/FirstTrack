@@ -16,6 +16,18 @@ class UserProfileInline(admin.StackedInline):
 class CustomUserAdmin(UserAdmin):
     inlines = [UserProfileInline]
     list_display = ['username', 'get_full_name', 'email', 'get_department', 'is_active']
+    # Logowanie działa wyłącznie po numerze chip (patrz UserProfile.chip_number /
+    # ChipNumberBackend) - pole "password" i domyślna ikona/link "Zmień hasło"
+    # z UserAdmin nie mają już zastosowania i tylko wprowadzałyby w błąd
+    # (ręczna zmiana hasła tutaj rozjechałaby się z numerem chipu).
+    fieldsets = (
+        (None, {'fields': ('username',)}),
+        ('Dane osobowe', {'fields': ('first_name', 'last_name', 'email')}),
+        ('Uprawnienia', {
+            'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
+        }),
+        ('Ważne daty', {'fields': ('last_login', 'date_joined')}),
+    )
 
     def get_department(self, obj):
         p = getattr(obj, 'profile', None)

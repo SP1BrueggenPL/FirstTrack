@@ -51,7 +51,7 @@
               <td>{{ u.get_full_name }}</td>
               <td>{{ u.email }}</td>
               <td>{{ u.profile.get_department_display }}</td>
-              <td class="font-monospace">{{ u.profile.chip_number }}</td>
+              <td class="font-monospace">{{ u.profile.chip_number|default:"–" }}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -61,6 +61,29 @@
         {% endif %}
       </div>
     </div>
+
+    {% if results.updated %}
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-arrow-repeat text-info me-2"></i>Zaktualizowane konta ({{ results.updated|length }})</div>
+      <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light">
+            <tr><th>Imię i nazwisko</th><th>Email</th><th>Dział</th><th>Nr chip</th></tr>
+          </thead>
+          <tbody>
+            {% for u in results.updated %}
+            <tr>
+              <td>{{ u.get_full_name }}</td>
+              <td>{{ u.email }}</td>
+              <td>{{ u.profile.get_department_display }}</td>
+              <td class="font-monospace">{{ u.profile.chip_number|default:"–" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
 
     {% if results.errors %}
     <div class="card">
