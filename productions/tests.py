@@ -211,6 +211,68 @@ class LinkedProductionCorrectionSyncTests(TestCase):
         self.assertTrue(self.packaging.checklist_after.final_acceptance)
 
 
+class LinkedEtap3GatingTests(TestCase):
+    """Etap III jednej strony powiązanej pary jest dostępny tylko wtedy, gdy
+    checklista Etapu II OBU stron jest ukończona - to w praktyce jedna
+    produkcja, więc nie można zwolnić jednej strony, gdy druga wciąż czeka."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.sensory = FirstProduction.objects.create(
+            sap_zlecenie='S1', product_name='Sensory', scope='sensory', person_sd=self.sd)
+        self.packaging = FirstProduction.objects.create(
+            sap_zlecenie='P1', product_name='Packaging', scope='packaging',
+            fert_number='F1', recipe='R1', person_sd=self.sd)
+
+        self.client.get(f'/{self.sensory.pk}/etap2/sensoryczne/')
+        self.client.post(f'/{self.sensory.pk}/etap2/powiaz-pakowanie/',
+                          {'packaging_production': self.packaging.pk})
+
+        # tylko sensoryka jest ukończona - pakowanie jeszcze nie
+        self.sensory.refresh_from_db()
+        sensory_params = self.sensory.checklist_after.sensory_params.all()
+        self.client.post(f'/{self.sensory.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'next': '1',
+        })
+        self.sensory.refresh_from_db()
+
+    def test_etap3_blocked_while_linked_packaging_not_done(self):
+        resp = self.client.get(f'/{self.sensory.pk}/')
+        self.assertNotContains(resp, 'Akceptacja SD &amp; Zwolnienie')
+
+        resp = self.client.post(f'/{self.sensory.pk}/etap3/', {
+            'decision': 'accept', 'acceptance_signature': '',
+        })
+        self.assertRedirects(resp, f'/{self.sensory.pk}/')
+        self.sensory.refresh_from_db()
+        self.assertEqual(self.sensory.status, 'etap2')
+
+    def test_etap3_available_once_both_sides_done(self):
+        self.client.get(f'/{self.packaging.pk}/etap2/pakowanie/')
+        self.packaging.refresh_from_db()
+        packaging_items = self.packaging.checklist_after.packaging_items.all()
+        self.client.post(f'/{self.packaging.pk}/etap2/pakowanie/', {
+            'packaging-TOTAL_FORMS': str(packaging_items.count()),
+            'packaging-INITIAL_FORMS': str(packaging_items.count()),
+            **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            'complete': '1',
+        })
+        resp = self.client.get(f'/{self.sensory.pk}/')
+        self.assertContains(resp, 'Akceptacja SD &amp; Zwolnienie')
+
+        resp = self.client.post(f'/{self.sensory.pk}/etap3/', {
+            'decision': 'accept', 'acceptance_signature': '',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.sensory.refresh_from_db()
+        self.assertEqual(self.sensory.status, 'zwolniona')
+
+
 class LinkedPdfDataTests(TestCase):
     """PDF Etapu II/III dla powiązanej pary sensoryka/pakowanie musi łączyć
     dane z obu produkcji - inaczej strona pakowania nie widziała parametrów
@@ -235,6 +297,19 @@ class LinkedPdfDataTests(TestCase):
         data = _linked_checklist_data(self.packaging)
         self.assertGreater(len(data['sensory']), 0)
         self.assertGreater(len(data['packaging']), 0)
+
+    def test_pdf_data_merges_photos_from_both_sides(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from .pdf_views import _linked_checklist_data
+        self.sensory.refresh_from_db()
+        self.packaging.refresh_from_db()
+        self.sensory.checklist_after.photo_1 = SimpleUploadedFile('a.jpg', b'fake-sensory-photo')
+        self.sensory.checklist_after.save()
+        self.packaging.checklist_after.photo_1 = SimpleUploadedFile('b.jpg', b'fake-packaging-photo')
+        self.packaging.checklist_after.save()
+
+        data = _linked_checklist_data(self.packaging)
+        self.assertEqual(len(data['photo_uris']), 2)
 
     def test_sensory_side_pdf_data_includes_linked_packaging_items(self):
         from .pdf_views import _linked_checklist_data

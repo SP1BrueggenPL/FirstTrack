@@ -1,3 +1,4 @@
+import base64
 import logging
 
 from django.contrib import messages
@@ -63,6 +64,31 @@ def _build_team_sigs(prod, ca):
     return sigs
 
 
+def _photo_data_uri(image_field):
+    """Zdjęcie jako inline data: URI, nie ścieżka /media/... - WeasyPrint
+    generuje PDF bez serwera HTTP, który mógłby taką ścieżkę obsłużyć, więc
+    obraz trzeba wbudować bezpośrednio w wygenerowany HTML."""
+    if not image_field:
+        return None
+    try:
+        with image_field.open('rb') as f:
+            data = f.read()
+    except Exception as e:
+        logger.warning('Nie udało się wczytać zdjęcia %s do PDF: %s', image_field.name, e)
+        return None
+    ext = image_field.name.rsplit('.', 1)[-1].lower()
+    mime = {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',
+            'gif': 'image/gif', 'webp': 'image/webp'}.get(ext, 'image/jpeg')
+    return f'data:{mime};base64,{base64.b64encode(data).decode("ascii")}'
+
+
+def _checklist_photo_uris(ca):
+    if not ca:
+        return []
+    uris = [_photo_data_uri(getattr(ca, field)) for field in ('photo_1', 'photo_2', 'photo_3', 'photo_4')]
+    return [uri for uri in uris if uri]
+
+
 def _linked_checklist_data(prod):
     """Powiązana para sensoryka/pakowanie jest w praktyce jedną produkcją -
     parametry sensoryczne i pozycje pakowania fizycznie żyją na tej z dwóch
@@ -81,13 +107,17 @@ def _linked_checklist_data(prod):
     packaging_ca = getattr(packaging_prod, 'checklist_after', None)
 
     team_sigs = _build_team_sigs(sensory_prod, sensory_ca) if sensory_ca else []
-    if packaging_prod.pk != sensory_prod.pk and packaging_ca:
-        team_sigs = team_sigs + _build_team_sigs(packaging_prod, packaging_ca)
+    photo_uris = _checklist_photo_uris(sensory_ca)
+    if packaging_prod.pk != sensory_prod.pk:
+        if packaging_ca:
+            team_sigs = team_sigs + _build_team_sigs(packaging_prod, packaging_ca)
+        photo_uris = photo_uris + _checklist_photo_uris(packaging_ca)
 
     return {
         'sensory': sensory_ca.sensory_params.all() if sensory_ca else [],
         'packaging': packaging_ca.packaging_items.all() if packaging_ca else [],
         'team_sigs': team_sigs,
+        'photo_uris': photo_uris,
     }
 
 
@@ -143,7 +173,8 @@ def pdf_etap3(request, pk):
         else:
             cb = getattr(prod, 'checklist_before', None)
             pdf = _render_pdf('productions/pdf/etap3.html', {
-                'production': prod, 'cb': cb, 'ca': None, 'sensory': [], 'packaging': [], 'team_sigs': [],
+                'production': prod, 'cb': cb, 'ca': None,
+                'sensory': [], 'packaging': [], 'team_sigs': [], 'photo_uris': [],
             })
     except PdfGenerationError as e:
         messages.error(request, str(e))
