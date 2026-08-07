@@ -410,6 +410,30 @@ class ReleaseDecisionWorkflowTests(TestCase):
         self.assertIn('42', release_log.body)
         self.assertIn(self.prod.sap_material, release_log.body)
 
+    def test_released_production_offers_staff_link_to_redo_release_form(self):
+        # Zdjęcia (i decyzja SD) są wpisywane wyłącznie w formularzu Etapu III
+        # - po zwolnieniu produkcji główny formularz edycji jest zablokowany,
+        # więc bez tego linku nie dałoby się nigdy poprawić/dosłać zdjęcia.
+        self.client.post(f'/{self.prod.pk}/etap3/', {
+            'decision': 'accept',
+            'acceptance_signature': '',
+        })
+        self.sd.is_staff = True
+        self.sd.save()
+        resp = self.client.get(f'/{self.prod.pk}/')
+        self.assertContains(resp, f'/{self.prod.pk}/etap3/')
+        self.assertContains(resp, 'Popraw zdjęcia')
+
+    def test_released_production_hides_redo_link_for_non_staff(self):
+        self.client.post(f'/{self.prod.pk}/etap3/', {
+            'decision': 'accept',
+            'acceptance_signature': '',
+        })
+        self.sd.is_staff = False
+        self.sd.save()
+        resp = self.client.get(f'/{self.prod.pk}/')
+        self.assertNotContains(resp, 'Popraw zdjęcia')
+
     def test_conditional_requires_comment(self):
         resp = self.client.post(f'/{self.prod.pk}/etap3/', {
             'decision': 'conditional',
