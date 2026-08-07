@@ -24,6 +24,7 @@ from .forms import (
     FirstProductionForm, SAPImportForm,
     ChecklistBeforeForm,
     ChecklistAfterSensoryForm, ChecklistAfterPackagingForm, ChecklistAfterAcceptanceForm,
+    ChecklistAfterPhotosForm,
     ChecklistAfterHeaderForm, LinkPackagingForm,
     SensoryParamFormSet, PackagingItemFormSet,
     UserCreateForm, UserEditForm, UserChipForm, UserImportRowForm, UserBulkImportForm,
@@ -833,6 +834,33 @@ def release_production(request, pk):
         'checklist': instance,
         'signed_team': signed,
         'step': 3,
+    })
+
+
+@login_required
+def edit_release_photos(request, pk):
+    """Donoszenie/poprawa zdjęć z akceptacji już po zwolnieniu produkcji -
+    bez ponownego przechodzenia przez decyzję SD i bez wysyłki maila
+    zwolnienia jeszcze raz (patrz release_production)."""
+    prod = get_object_or_404(FirstProduction, pk=pk)
+    if not request.user.is_staff:
+        messages.error(request, 'Brak uprawnień do zmiany zdjęć.')
+        return redirect('production_detail', pk=pk)
+    instance = _get_or_create_checklist_after(prod)
+
+    if request.method == 'POST':
+        form = ChecklistAfterPhotosForm(request.POST, request.FILES, instance=instance)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Zdjęcia zaktualizowane.')
+            return redirect('production_detail', pk=pk)
+    else:
+        form = ChecklistAfterPhotosForm(instance=instance)
+
+    return render(request, 'productions/edit_release_photos.html', {
+        'form': form,
+        'production': prod,
+        'checklist': instance,
     })
 
 
