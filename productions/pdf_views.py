@@ -89,6 +89,32 @@ def _checklist_photo_uris(ca):
     return [uri for uri in uris if uri]
 
 
+def _photo_attachment(image_field):
+    """Zdjęcie jako (nazwa, bajty, mimetype) do doczepienia do maila -
+    osobno od PDF, bo w mailu chcemy zdjęcia w oryginalnej rozdzielczości,
+    nie zmniejszone przez layout PDF-a."""
+    if not image_field:
+        return None
+    try:
+        with image_field.open('rb') as f:
+            data = f.read()
+    except Exception as e:
+        logger.warning('Nie udało się wczytać zdjęcia %s do maila: %s', image_field.name, e)
+        return None
+    ext = image_field.name.rsplit('.', 1)[-1].lower()
+    mime = {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',
+            'gif': 'image/gif', 'webp': 'image/webp'}.get(ext, 'image/jpeg')
+    filename = image_field.name.rsplit('/', 1)[-1]
+    return (filename, data, mime)
+
+
+def _checklist_photo_attachments(ca):
+    if not ca:
+        return []
+    atts = [_photo_attachment(getattr(ca, field)) for field in ('photo_1', 'photo_2', 'photo_3', 'photo_4')]
+    return [a for a in atts if a]
+
+
 def _linked_checklist_data(prod):
     """Powiązana para sensoryka/pakowanie jest w praktyce jedną produkcją -
     parametry sensoryczne i pozycje pakowania fizycznie żyją na tej z dwóch
@@ -108,16 +134,19 @@ def _linked_checklist_data(prod):
 
     team_sigs = _build_team_sigs(sensory_prod, sensory_ca) if sensory_ca else []
     photo_uris = _checklist_photo_uris(sensory_ca)
+    photo_attachments = _checklist_photo_attachments(sensory_ca)
     if packaging_prod.pk != sensory_prod.pk:
         if packaging_ca:
             team_sigs = team_sigs + _build_team_sigs(packaging_prod, packaging_ca)
         photo_uris = photo_uris + _checklist_photo_uris(packaging_ca)
+        photo_attachments = photo_attachments + _checklist_photo_attachments(packaging_ca)
 
     return {
         'sensory': sensory_ca.sensory_params.all() if sensory_ca else [],
         'packaging': packaging_ca.packaging_items.all() if packaging_ca else [],
         'team_sigs': team_sigs,
         'photo_uris': photo_uris,
+        'photo_attachments': photo_attachments,
     }
 
 

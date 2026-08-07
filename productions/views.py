@@ -1136,7 +1136,7 @@ def _send_release_email(prod, ca):
         '',
         f'Liczba UMK do śluzy: {ca.umk_count or "–"}',
         '',
-        'W załączniku: checklista końcowa (PDF), ze zdjęciami z akceptacji.',
+        'W załączniku: checklista końcowa (PDF) oraz zdjęcia z akceptacji.',
         '',
         '-- FirstTrack, H. & J. Brüggen KG --',
     ]
@@ -1145,16 +1145,18 @@ def _send_release_email(prod, ca):
     email = EmailMessage(subject=subject, body=body,
                          from_email=settings.DEFAULT_FROM_EMAIL, to=recipients)
     try:
-        # Zdjęcia z akceptacji są teraz wbudowane w PDF (patrz
-        # _linked_checklist_data/photo_uris), więc nie dołączamy ich już
-        # osobno jako surowych plików do maila - są zarówno w PDF, jak i w
-        # samej aplikacji (podgląd na stronie produkcji).
         from .pdf_views import _generate_pdf_etap3
         pdf_bytes = _generate_pdf_etap3(prod, ca)
         if pdf_bytes:
             email.attach(f'PP_{prod.sap_zlecenie}_Zwolnienie.pdf', pdf_bytes, 'application/pdf')
     except Exception as e:
         logger.error('Błąd generowania PDF do maila o zwolnieniu (mail zostanie wysłany bez PDF): %s', e)
+
+    # Zdjęcia w PDF są zmniejszone do layoutu strony - dołączamy je też jako
+    # osobne pliki, żeby dało się je otworzyć w pełnej rozdzielczości.
+    from .pdf_views import _linked_checklist_data
+    for i, (filename, data, mime) in enumerate(_linked_checklist_data(prod)['photo_attachments'], start=1):
+        email.attach(f'Zdjecie_{i}_{filename}', data, mime)
 
     _send_and_log(prod, subject, body, recipients, email_message=email)
 

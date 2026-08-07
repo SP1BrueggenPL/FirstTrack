@@ -3,8 +3,9 @@ import json
 from datetime import date
 
 from django.contrib.auth.models import User
+from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from .models import ChecklistBefore, EmailLog, FirstProduction, UserProfile
 
@@ -414,6 +415,38 @@ class ReleaseDecisionWorkflowTests(TestCase):
         self.assertIsNotNone(release_log)
         self.assertIn('42', release_log.body)
         self.assertIn(self.prod.sap_material, release_log.body)
+
+    def test_accept_with_photo_attaches_it_to_release_email(self):
+        # Zdjęcia w PDF są zmniejszone do layoutu strony - w mailu o
+        # zwolnieniu mają być też jako osobne pliki w pełnej rozdzielczości.
+        photo = SimpleUploadedFile('a.png', _1PX_PNG, content_type='image/png')
+        resp = self.client.post(f'/{self.prod.pk}/etap3/', {
+            'decision': 'accept',
+            'acceptance_signature': '',
+            'photo_1': photo,
+        })
+        self.assertEqual(resp.status_code, 302)
+        release_mail = next(m for m in mail.outbox if 'Zwolniona' in m.subject)
+        attachment_names = [a[0] for a in release_mail.attachments]
+        self.assertTrue(any(name.startswith('Zdjecie_1_') and name.endswith('.png')
+                             for name in attachment_names))
+
+    def test_uploaded_photo_is_reachable_over_http_even_with_debug_off(self):
+        # Bez własnego routingu dla MEDIA_URL, django.conf.urls.static.static()
+        # jest no-opem gdy DEBUG=False (produkcja na Azure) - zdjęcie fizycznie
+        # istnieje na dysku, ale strona/mail linkują do adresu, który wtedy
+        # zwraca 404.
+        photo = SimpleUploadedFile('a.png', _1PX_PNG, content_type='image/png')
+        self.client.post(f'/{self.prod.pk}/etap3/', {
+            'decision': 'accept',
+            'acceptance_signature': '',
+            'photo_1': photo,
+        })
+        ca = self.prod.checklist_after
+        ca.refresh_from_db()
+        with override_settings(DEBUG=False):
+            resp = self.client.get(ca.photo_1.url)
+        self.assertEqual(resp.status_code, 200)
 
     def test_released_production_shows_readonly_photo_gallery(self):
         # Zdjęcia są wpisywane wyłącznie w formularzu Etapu III (akceptacja)
