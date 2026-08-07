@@ -308,8 +308,8 @@
                 <i class="bi bi-file-earmark-pdf me-1"></i>Pobierz PDF Etap III
               </a>
               {% if request.user.is_staff %}
-              <a href="{% url 'release_production' production.pk %}" class="btn btn-outline-secondary btn-sm">
-                <i class="bi bi-images me-1"></i>Popraw zdjęcia / dane akceptacji
+              <a href="{% url 'edit_release_photos' production.pk %}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-images me-1"></i>Dodaj / popraw zdjęcia
               </a>
               {% endif %}
             </div>

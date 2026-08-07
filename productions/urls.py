@@ -16,6 +16,7 @@ urlpatterns = [
     path('<int:pk>/etap2/odwiaz/', views.unlink_production, name='unlink_production'),
     path('<int:pk>/wyslij-mail/', views.send_production_email, name='send_production_email'),
     path('<int:pk>/etap3/', views.release_production, name='release_production'),
+    path('<int:pk>/etap3/zdjecia/', views.edit_release_photos, name='edit_release_photos'),
     path('<int:pk>/usun/', views.production_delete, name='production_delete'),
 
     # PDF
