@@ -135,7 +135,16 @@ STATIC_URL = '/static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+# Na Azure App Service kod aplikacji jest przy każdym starcie wypakowywany do
+# /tmp/<losowy-hash> (patrz startup.sh/Oryx) - ten katalog, a więc i BASE_DIR,
+# jest efemeryczny i znika przy każdym restarcie/redeployu kontenera. "/home"
+# to jedyne miejsce na Azure App Service Linux, które przetrwa restart. Bez
+# tego przesłane pliki (zdjęcia z Etapu II/III, screenshoty SAP) znikały,
+# mimo że w bazie danych ich ścieżka wciąż była zapisana.
+if _HOSTNAME:
+    MEDIA_ROOT = Path('/home/media')
+else:
+    MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
