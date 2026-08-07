@@ -446,20 +446,6 @@ class ChecklistAfterAcceptanceForm(forms.ModelForm):
         return cleaned
 
 
-# Poprawa/donoszenie zdjęć po zwolnieniu produkcji - bez ponownego
-# przechodzenia przez decyzję SD (i bez ponownego maila zwolnienia).
-class ChecklistAfterPhotosForm(forms.ModelForm):
-    class Meta:
-        model = ChecklistAfter
-        fields = ['photo_1', 'photo_2', 'photo_3', 'photo_4']
-        widgets = {
-            'photo_1': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),
-            'photo_2': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),
-            'photo_3': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),
-            'photo_4': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),
-        }
-
-
 # zachowane dla kompatybilności wstecznej (używane w widoku checklist_after)
 ChecklistAfterHeaderForm = ChecklistAfterSensoryForm
 

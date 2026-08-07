@@ -415,58 +415,21 @@ class ReleaseDecisionWorkflowTests(TestCase):
         self.assertIn('42', release_log.body)
         self.assertIn(self.prod.sap_material, release_log.body)
 
-    def test_released_production_offers_staff_link_to_edit_photos(self):
-        # Zdjęcia są wpisywane wyłącznie w formularzu Etapu III - po
-        # zwolnieniu produkcji główny formularz edycji jest zablokowany,
-        # więc bez tego linku nie dałoby się nigdy poprawić/dosłać zdjęcia.
-        self.client.post(f'/{self.prod.pk}/etap3/', {
-            'decision': 'accept',
-            'acceptance_signature': '',
-        })
-        self.sd.is_staff = True
-        self.sd.save()
-        resp = self.client.get(f'/{self.prod.pk}/')
-        self.assertContains(resp, f'/{self.prod.pk}/etap3/zdjecia/')
-        self.assertContains(resp, 'Dodaj / popraw zdjęcia')
-
-    def test_released_production_hides_edit_photos_link_for_non_staff(self):
-        self.client.post(f'/{self.prod.pk}/etap3/', {
-            'decision': 'accept',
-            'acceptance_signature': '',
-        })
-        self.sd.is_staff = False
-        self.sd.save()
-        resp = self.client.get(f'/{self.prod.pk}/')
-        self.assertNotContains(resp, 'Dodaj / popraw zdjęcia')
-
-    def test_edit_release_photos_saves_photo_without_resending_release_email(self):
-        self.client.post(f'/{self.prod.pk}/etap3/', {
-            'decision': 'accept',
-            'acceptance_signature': '',
-        })
-        self.sd.is_staff = True
-        self.sd.save()
-        release_emails_before = EmailLog.objects.filter(
-            production=self.prod, subject__icontains='Zwolniona').count()
-
+    def test_released_production_shows_readonly_photo_gallery(self):
+        # Zdjęcia są wpisywane wyłącznie w formularzu Etapu III (akceptacja)
+        # - strona produkcji ma pokazywać wyłącznie podgląd tego, co tam
+        # zapisano, bez osobnej możliwości dodania/podmiany zdjęcia gdzie
+        # indziej.
         photo = SimpleUploadedFile('a.png', _1PX_PNG, content_type='image/png')
-        resp = self.client.post(f'/{self.prod.pk}/etap3/zdjecia/', {'photo_1': photo})
-        self.assertEqual(resp.status_code, 302)
-
-        ca = self.prod.checklist_after
-        ca.refresh_from_db()
-        self.assertTrue(ca.photo_1)
-        self.assertEqual(
-            EmailLog.objects.filter(production=self.prod, subject__icontains='Zwolniona').count(),
-            release_emails_before)
-
-    def test_edit_release_photos_blocked_for_non_staff(self):
-        photo = SimpleUploadedFile('a.png', _1PX_PNG, content_type='image/png')
-        resp = self.client.post(f'/{self.prod.pk}/etap3/zdjecia/', {'photo_1': photo})
-        self.assertEqual(resp.status_code, 302)
-        ca = self.prod.checklist_after
-        ca.refresh_from_db()
-        self.assertFalse(ca.photo_1)
+        self.client.post(f'/{self.prod.pk}/etap3/', {
+            'decision': 'accept',
+            'acceptance_signature': '',
+            'photo_1': photo,
+        })
+        resp = self.client.get(f'/{self.prod.pk}/')
+        self.assertContains(resp, 'Zdjęcia (1)')
+        self.assertContains(resp, 'id="galeria-zdjec"')
+        self.assertNotContains(resp, 'Wybierz plik')
 
     def test_conditional_requires_comment(self):
         resp = self.client.post(f'/{self.prod.pk}/etap3/', {
