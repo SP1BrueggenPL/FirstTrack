@@ -416,6 +416,18 @@ class ReleaseDecisionWorkflowTests(TestCase):
         self.assertIn('42', release_log.body)
         self.assertIn(self.prod.sap_material, release_log.body)
 
+    def test_release_form_has_multipart_encoding(self):
+        # Formularz ma pola do wgrywania zdjęć (photo_1..4) - bez
+        # enctype="multipart/form-data" na <form> przeglądarka wysyła je jako
+        # application/x-www-form-urlencoded, w którym pliki są po cichu
+        # ignorowane (bez błędu!), więc zdjęcie nigdy nie trafia do serwera,
+        # mimo że resztę formularza (decyzję SD) zapisuje bez problemu.
+        # Test klienta Django wysyła multipart niezależnie od atrybutu
+        # <form> w HTML, więc tego typu regresji nie wykryją testy samego
+        # POST-a - trzeba sprawdzić samo wyrenderowane HTML.
+        resp = self.client.get(f'/{self.prod.pk}/etap3/')
+        self.assertContains(resp, 'enctype="multipart/form-data"')
+
     def test_accept_with_photo_attaches_it_to_release_email(self):
         # Zdjęcia w PDF są zmniejszone do layoutu strony - w mailu o
         # zwolnieniu mają być też jako osobne pliki w pełnej rozdzielczości.
