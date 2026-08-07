@@ -303,16 +303,9 @@
               {% if checklist_after.acceptance_date %} · {{ checklist_after.acceptance_date|date:"d.m.Y" }}{% endif %}
             </div>
             {% endif %}
-            <div class="d-flex gap-2 flex-wrap">
-              <a href="{% url 'pdf_etap3' production.pk %}" class="btn btn-outline-secondary btn-sm" target="_blank">
-                <i class="bi bi-file-earmark-pdf me-1"></i>Pobierz PDF Etap III
-              </a>
-              {% if request.user.is_staff %}
-              <a href="{% url 'edit_release_photos' production.pk %}" class="btn btn-outline-secondary btn-sm">
-                <i class="bi bi-images me-1"></i>Dodaj / popraw zdjęcia
-              </a>
-              {% endif %}
-            </div>
+            <a href="{% url 'pdf_etap3' production.pk %}" class="btn btn-outline-secondary btn-sm" target="_blank">
+              <i class="bi bi-file-earmark-pdf me-1"></i>Pobierz PDF Etap III
+            </a>
           {% elif etap2_ready %}
             <p class="text-muted small mb-3">Etap II zatwierdzony. Wypełnij akceptację SD i zwolnij produkcję.</p>
             <div class="d-flex gap-2 flex-wrap">
