@@ -493,14 +493,53 @@ def production_detail(request, pk):
 # Etap I – Checklista przed
 # ──────────────────────────────────────────────
 
+# Każdy wiersz checklisty ma jeden lub więcej działów nadzorujących (patrz
+# kolumna "Nadzór" w checklist_before.html) - poza swoim działem użytkownik
+# widzi wiersz, ale nie może go edytować. Wiersze testu pakowania (nadzór
+# wpisywany ręcznie per pozycja, nie stały dział) i "Linia pakująca" w
+# nagłówku nie mają tu odpowiednika - zostają edytowalne dla każdego.
+CHECKLIST_BEFORE_ROW_FIELDS = [
+    (['order_updated_status', 'order_updated_uwagi'], ['SC']),
+    (['pwpr_status', 'pwpr_uwagi'], ['SC']),
+    (['analysis_form_status', 'analysis_form_version'], ['QA']),
+    (['zero_sample_status', 'zero_sample_uwagi'], ['RD', 'QL']),
+    (['production_card_status', 'production_card_uwagi'], ['RD', 'QA']),
+    (['machine_suitable_status', 'machine_suitable_uwagi'], ['CE', 'PP']),
+    (['packaging_layout_status', 'packaging_layout_uwagi'], ['SD']),
+    (['collective_label_status', 'collective_label_uwagi'], ['SD']),
+    (['date_format_status', 'date_format_uwagi'], ['SD']),
+    (['bom_set_status', 'bom_set_uwagi'], ['QA']),
+    (['planned_yield_kg', 'planned_yield_takty'], ['PP', 'RD']),
+    (['additional_samples_status', 'additional_samples_count'], ['SD']),
+]
+
+
+def _lock_checklist_before_rows_to_department(form, user):
+    """Poza własnym działem nadzorującym pola wiersza są tylko do odczytu -
+    disabled=True sprawia, że Django ignoruje przesłaną wartość i przy
+    zapisie zachowuje dotychczasową (patrz BaseForm._clean_fields), więc
+    ograniczenie działa nawet gdyby ktoś ręcznie odblokował pole w
+    przeglądarce. Administratorzy (is_staff) mogą edytować wszystko."""
+    if user.is_staff:
+        return
+    dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
+    for field_names, allowed_depts in CHECKLIST_BEFORE_ROW_FIELDS:
+        if dept in allowed_depts:
+            continue
+        for field_name in field_names:
+            form.fields[field_name].disabled = True
+
+
 @login_required
 def checklist_before(request, pk):
     prod     = get_object_or_404(FirstProduction, pk=pk)
     instance = getattr(prod, 'checklist_before', None)
 
     form = ChecklistBeforeForm(instance=instance, initial={'packaging_line': prod.packaging_line})
+    _lock_checklist_before_rows_to_department(form, request.user)
     if request.method == 'POST':
         form = ChecklistBeforeForm(request.POST, instance=instance)
+        _lock_checklist_before_rows_to_department(form, request.user)
         if form.is_valid():
             cb = form.save(commit=False)
             cb.production = prod

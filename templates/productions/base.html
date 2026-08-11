@@ -331,6 +331,9 @@
     .status-radio input[type=radio]:checked + label.nd {
       background: #e8e7e8; border-color: var(--br-slate); color: var(--br-charcoal);
     }
+    .status-radio-disabled label {
+      cursor: not-allowed; opacity: .55; pointer-events: none;
+    }
 
     /* ── Checklist table ────────────────────────────────── */
     .checklist-table td, .checklist-table th { vertical-align: middle; }

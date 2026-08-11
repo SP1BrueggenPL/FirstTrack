@@ -976,3 +976,58 @@ class TeamPersonDropdownTests(TestCase):
     def test_acceptor_choices_include_ce_department(self):
         resp = self.client.get('/nowa/')
         self.assertContains(resp, '<option value="1">Ce Person</option>'.replace('1', str(self.ce.pk)))
+
+
+class ChecklistBeforeDepartmentLockTests(TestCase):
+    """Wiersze checklisty Etapu I są edytowalne tylko przez dział, który je
+    nadzoruje (kolumna "Nadzór") - inne wiersze są zaszarzone/zablokowane."""
+
+    def setUp(self):
+        self.qa = _make_user('qauser', 'QA')
+        self.sc = _make_user('scuser', 'SC')
+        self.admin = _make_user('adminuser', 'SD')
+        self.admin.is_staff = True
+        self.admin.save()
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full')
+
+    def test_qa_sees_own_row_enabled_and_other_row_disabled(self):
+        self.client.force_login(self.qa)
+        resp = self.client.get(f'/{self.prod.pk}/etap1/')
+        self.assertFalse(resp.context['form'].fields['bom_set_status'].disabled)
+        self.assertTrue(resp.context['form'].fields['order_updated_status'].disabled)
+
+    def test_qa_cannot_write_to_other_departments_row(self):
+        self.client.force_login(self.qa)
+        self.client.post(f'/{self.prod.pk}/etap1/', {
+            'packaging_line': '',
+            'bom_set_status': 'tak',
+            'order_updated_status': 'tak',
+        })
+        cb = self.prod.checklist_before
+        self.assertEqual(cb.bom_set_status, 'tak')
+        self.assertEqual(cb.order_updated_status, '')
+
+    def test_sc_can_write_own_row_qa_cannot_overwrite_it_later(self):
+        self.client.force_login(self.sc)
+        self.client.post(f'/{self.prod.pk}/etap1/', {
+            'packaging_line': '',
+            'order_updated_status': 'tak',
+        })
+        self.client.logout()
+        self.client.force_login(self.qa)
+        self.client.post(f'/{self.prod.pk}/etap1/', {
+            'packaging_line': '',
+            'order_updated_status': 'nie',
+            'bom_set_status': 'tak',
+        })
+        cb = self.prod.checklist_before
+        cb.refresh_from_db()
+        self.assertEqual(cb.order_updated_status, 'tak')
+        self.assertEqual(cb.bom_set_status, 'tak')
+
+    def test_staff_can_edit_every_row(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get(f'/{self.prod.pk}/etap1/')
+        self.assertFalse(resp.context['form'].fields['order_updated_status'].disabled)
+        self.assertFalse(resp.context['form'].fields['bom_set_status'].disabled)
