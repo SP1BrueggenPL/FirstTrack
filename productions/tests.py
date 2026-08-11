@@ -1124,3 +1124,45 @@ class ChecklistBeforeDepartmentLockTests(TestCase):
         resp = self.client.get(f'/{self.prod.pk}/etap1/')
         self.assertFalse(resp.context['form'].fields['order_updated_status'].disabled)
         self.assertFalse(resp.context['form'].fields['bom_set_status'].disabled)
+
+
+class ItDepartmentTests(TestCase):
+    """Dział "IT" istnieje tylko do oznaczenia konta w panelu użytkowników -
+    nie ma być widoczny w checklistach ani listach wyboru zespołu/
+    akceptującego produkcji."""
+
+    def setUp(self):
+        self.admin = _make_user('adminuser', 'SD')
+        self.admin.is_staff = True
+        self.admin.save()
+        self.client.force_login(self.admin)
+
+    def test_it_selectable_when_creating_user(self):
+        resp = self.client.get('/uzytkownicy/nowy/')
+        self.assertContains(resp, '<option value="IT">IT</option>')
+
+    def test_it_user_can_be_created_and_edited(self):
+        resp = self.client.post('/uzytkownicy/nowy/', {
+            'full_name': 'It Person', 'email': 'it.person@example.com',
+            'department': 'IT', 'chip_number': '55555',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        user = User.objects.get(email='it.person@example.com')
+        self.assertEqual(user.profile.department, 'IT')
+
+        resp = self.client.post(f'/uzytkownicy/{user.pk}/edytuj/', {
+            'full_name': 'It Person', 'email': 'it.person@example.com', 'department': 'IT',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+
+    def test_it_department_not_in_production_team_or_acceptor_choices(self):
+        resp = self.client.get('/nowa/')
+        self.assertNotContains(resp, '<option value="IT">IT</option>')
+
+    def test_it_user_sees_all_checklist_before_rows_disabled(self):
+        it_user = _make_user('ituser', 'IT')
+        self.client.force_login(it_user)
+        prod = FirstProduction.objects.create(sap_zlecenie='9', product_name='Y', scope='full')
+        resp = self.client.get(f'/{prod.pk}/etap1/')
+        self.assertTrue(resp.context['form'].fields['order_updated_status'].disabled)
+        self.assertTrue(resp.context['form'].fields['bom_set_status'].disabled)
