@@ -18,6 +18,10 @@
     .chip-input {
       font-size: 2rem; letter-spacing: .6rem; text-align: center; font-weight: 700;
     }
+    .code-input {
+      font-size: 1.5rem; letter-spacing: .4rem; text-align: center; font-weight: 700;
+      text-transform: uppercase;
+    }
   </style>
 </head>
 <body>
@@ -33,11 +37,67 @@
         <div class="alert alert-danger py-2 small mb-3">
           <i class="bi bi-lock me-1"></i>Zbyt wiele nieudanych prób. Spróbuj ponownie za kilka minut.
         </div>
+        {% elif error == 'code_mismatch' %}
+        <div class="alert alert-danger py-2 small mb-3">
+          <i class="bi bi-exclamation-triangle me-1"></i>
+          Kody nie są identyczne albo nie mają {{ auth_code_length }} znaków.
+        </div>
+        {% elif error and stage == 'verify_code' %}
+        <div class="alert alert-danger py-2 small mb-3">
+          <i class="bi bi-exclamation-triangle me-1"></i>Nieprawidłowy kod autoryzujący.
+        </div>
         {% elif error %}
         <div class="alert alert-danger py-2 small mb-3">
           <i class="bi bi-exclamation-triangle me-1"></i>Nieprawidłowy numer chip.
         </div>
         {% endif %}
+
+        {% if stage == 'set_code' %}
+        <p class="small text-muted">
+          Pierwsze logowanie (albo kod został zresetowany) - ustaw
+          {{ auth_code_length }}-znakowy kod autoryzujący. Będziesz go podawać
+          przy każdym logowaniu, razem z numerem chip.
+        </p>
+        <form method="post">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label fw-semibold text-center d-block">Nowy kod autoryzujący</label>
+            <input type="text" maxlength="{{ auth_code_length }}" name="new_code" autofocus
+                   autocomplete="off" class="form-control code-input" {% if locked_out %}disabled{% endif %}>
+          </div>
+          <div class="mb-4">
+            <label class="form-label fw-semibold text-center d-block">Powtórz kod</label>
+            <input type="text" maxlength="{{ auth_code_length }}" name="new_code_confirm"
+                   autocomplete="off" class="form-control code-input" {% if locked_out %}disabled{% endif %}>
+          </div>
+          <input type="hidden" name="next" value="{{ next }}">
+          <button type="submit" class="btn btn-login w-100" {% if locked_out %}disabled{% endif %}>
+            <i class="bi bi-box-arrow-in-right me-1"></i>Ustaw kod i zaloguj się
+          </button>
+        </form>
+        <a href="{% url 'login' %}?cancel=1" class="d-block text-center small text-muted mt-3">
+          <i class="bi bi-arrow-left me-1"></i>To nie ja - wróć do numeru chip
+        </a>
+
+        {% elif stage == 'verify_code' %}
+        <div class="mb-4">
+          <label class="form-label fw-semibold text-center d-block">Kod autoryzujący</label>
+          <form method="post">
+            {% csrf_token %}
+            <input type="text" maxlength="{{ auth_code_length }}" name="auth_code" autofocus
+                   autocomplete="off" class="form-control code-input"
+                   {% if locked_out %}disabled{% endif %}>
+            <input type="hidden" name="next" value="{{ next }}">
+            <button type="submit" class="btn btn-login w-100 mt-4" {% if locked_out %}disabled{% endif %}>
+              <i class="bi bi-box-arrow-in-right me-1"></i>Zaloguj się
+            </button>
+          </form>
+        </div>
+        <a href="{% url 'login' %}?cancel=1" class="d-block text-center small text-muted mt-3">
+          <i class="bi bi-arrow-left me-1"></i>To nie ja - wróć do numeru chip
+        </a>
+
+        {% else %}
         <form method="post">
           {% csrf_token %}
           <div class="mb-4">
@@ -51,6 +111,7 @@
             <i class="bi bi-box-arrow-in-right me-1"></i>Zaloguj się
           </button>
         </form>
+        {% endif %}
       </div>
     </div>
   </div>

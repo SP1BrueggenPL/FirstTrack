@@ -1,3 +1,4 @@
+from django.contrib.auth.hashers import check_password, make_password
 from django.core.validators import RegexValidator
 from django.db import models
 from django.contrib.auth.models import User
@@ -32,6 +33,10 @@ class UserProfile(models.Model):
         validators=[chip_number_validator],
         help_text='5-cyfrowy numer używany do logowania (zamiast hasła).',
     )
+    # Drugi składnik logowania - użytkownik ustawia go sam przy pierwszym
+    # logowaniu (i ponownie po zresetowaniu przez admina). Trzymany jako hash,
+    # nie plain-text, tak jak hasło.
+    auth_code_hash = models.CharField('Hash kodu autoryzującego', max_length=128, blank=True)
 
     class Meta:
         verbose_name = 'Profil użytkownika'
@@ -42,6 +47,18 @@ class UserProfile(models.Model):
         name = self.user.get_full_name() or self.user.username
         dept = self.get_department_display()
         return f"{name} ({dept})" if dept else name
+
+    @property
+    def has_auth_code(self):
+        return bool(self.auth_code_hash)
+
+    def set_auth_code(self, code):
+        self.auth_code_hash = make_password(code)
+
+    def check_auth_code(self, code):
+        if not self.auth_code_hash or not code:
+            return False
+        return check_password(code, self.auth_code_hash)
 
 
 @receiver(post_save, sender=User)
