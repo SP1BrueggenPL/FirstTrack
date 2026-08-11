@@ -54,7 +54,7 @@ def _clean_chip_number(chip, *, exclude_user=None):
 class UserCreateForm(forms.Form):
     full_name = forms.CharField(label='Imię i nazwisko', max_length=150,
                                 widget=_fc('np. Jan Kowalski', 'form-control'))
-    email      = forms.EmailField(label='Email służbowy',
+    email      = forms.EmailField(label='Email służbowy', required=False,
                                   widget=forms.EmailInput(attrs={'class': 'form-control'}))
     department = forms.ChoiceField(label='Dział', choices=[('', '– wybierz –')] + list(DEPT_CHOICES),
                                    widget=_sel('form-select'))
@@ -64,8 +64,8 @@ class UserCreateForm(forms.Form):
         return (self.cleaned_data.get('full_name') or '').strip()
 
     def clean_email(self):
-        email = self.cleaned_data['email']
-        if User.objects.filter(email=email).exists():
+        email = self.cleaned_data.get('email', '')
+        if email and User.objects.filter(email=email).exists():
             raise forms.ValidationError('Użytkownik z tym adresem email już istnieje.')
         return email
 
@@ -84,7 +84,11 @@ class UserImportRowForm(UserCreateForm):
     tego samego arkusza aktualizuje istniejące konto (dopasowane po emailu)
     zamiast wywalać się na 'ten adres email już istnieje', a puste pole
     numeru chip jest dopuszczalne - osoba jeszcze nie ma przypisanego chipu
-    (w interfejsie wyświetli się jako „–")."""
+    (w interfejsie wyświetli się jako „–"). Email jest tu (w odróżnieniu od
+    ręcznego tworzenia konta) wymagany - import dopasowuje wiersz do
+    istniejącego konta właśnie po adresie email."""
+    email = forms.EmailField(label='Email służbowy',
+                             widget=forms.EmailInput(attrs={'class': 'form-control'}))
     chip_number = forms.CharField(label='Numer chip (5 cyfr)', required=False, widget=_CHIP_WIDGET)
 
     def __init__(self, *args, existing_user=None, **kwargs):

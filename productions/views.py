@@ -11,6 +11,7 @@ from django.contrib.auth.models import User
 from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.text import slugify
 from django.core.mail import send_mail, EmailMessage
 from django.conf import settings
 from django.views.decorators.http import require_POST
@@ -1354,7 +1355,17 @@ def _sync_chip_password(user, chip_number):
 def _create_user_account(cleaned):
     """Tworzy konto + profil na podstawie cleaned_data z UserCreateForm
     (albo równoważnego słownika, np. przy imporcie masowym z Excela)."""
-    username_base = cleaned['email'].split('@')[0].lower()
+    if cleaned['email']:
+        username_base = cleaned['email'].split('@')[0].lower()
+    else:
+        # Email jest opcjonalny przy ręcznym tworzeniu konta - login trzeba
+        # wtedy wyprowadzić z imienia i nazwiska. slugify() usuwa znaki
+        # diakrytyczne/spacje, ale też każdy "." - stąd osobno na imię i
+        # nazwisko, żeby zachować format "imie.nazwisko" jak przy loginach
+        # wyprowadzonych z emaila.
+        first_slug = slugify(cleaned['first_name'])
+        last_slug = slugify(cleaned['last_name'])
+        username_base = f'{first_slug}.{last_slug}' if last_slug else (first_slug or 'user')
     username = username_base
     counter = 1
     while User.objects.filter(username=username).exists():
