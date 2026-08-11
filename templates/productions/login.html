@@ -62,12 +62,12 @@
           {% csrf_token %}
           <div class="mb-3">
             <label class="form-label fw-semibold text-center d-block">Nowy kod autoryzujący</label>
-            <input type="text" maxlength="{{ auth_code_length }}" name="new_code" autofocus
+            <input type="password" maxlength="{{ auth_code_length }}" name="new_code" autofocus
                    autocomplete="off" class="form-control code-input" {% if locked_out %}disabled{% endif %}>
           </div>
           <div class="mb-4">
             <label class="form-label fw-semibold text-center d-block">Powtórz kod</label>
-            <input type="text" maxlength="{{ auth_code_length }}" name="new_code_confirm"
+            <input type="password" maxlength="{{ auth_code_length }}" name="new_code_confirm"
                    autocomplete="off" class="form-control code-input" {% if locked_out %}disabled{% endif %}>
           </div>
           <input type="hidden" name="next" value="{{ next }}">
@@ -84,7 +84,7 @@
           <label class="form-label fw-semibold text-center d-block">Kod autoryzujący</label>
           <form method="post">
             {% csrf_token %}
-            <input type="text" maxlength="{{ auth_code_length }}" name="auth_code" autofocus
+            <input type="password" maxlength="{{ auth_code_length }}" name="auth_code" autofocus
                    autocomplete="off" class="form-control code-input"
                    {% if locked_out %}disabled{% endif %}>
             <input type="hidden" name="next" value="{{ next }}">
