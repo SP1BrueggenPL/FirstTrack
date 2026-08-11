@@ -159,6 +159,14 @@ class NotificationRecipientForm(forms.ModelForm):
 # Pierwsza Produkcja
 # ──────────────────────────────────────────────────────────
 
+def _use_full_name_labels(form, *field_names):
+    """ModelChoiceField domyślnie pokazuje str(user), czyli login
+    (imie.nazwisko) - nieczytelne w listach wyboru zespołu/akceptującego,
+    więc wszędzie pokazujemy Imię i Nazwisko."""
+    for name in field_names:
+        form.fields[name].label_from_instance = lambda obj: obj.get_full_name() or obj.username
+
+
 def _person_field(dept_code, label, empty_label='– wybierz –'):
     f = forms.ModelChoiceField(
         queryset=User.objects.filter(profile__department=dept_code)
@@ -234,12 +242,13 @@ class FirstProductionForm(forms.ModelForm):
             self.fields[field_name].required = False
 
         self.fields['acceptor'].queryset = (
-            User.objects.filter(profile__department='SD')
+            User.objects.filter(profile__department__in=['SD', 'CE'])
                         .select_related('profile')
                         .order_by('last_name', 'first_name')
         )
         self.fields['acceptor'].empty_label = '– wybierz akceptującego –'
         self.fields['acceptor'].required = False
+        _use_full_name_labels(self, *depts.keys(), 'acceptor')
         # Żadne z pól "Szczegółowe informacje"/"Numery" (poza krótkim tekstem
         # materiału) nie jest wymagane - niezależnie od działu osoby
         # wypełniającej formularz, można zapisać produkcję z niekompletnymi

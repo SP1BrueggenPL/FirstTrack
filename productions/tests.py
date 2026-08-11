@@ -205,6 +205,40 @@ class LinkedProductionCorrectionSyncTests(TestCase):
         self.assertIsNone(packaging_ca.completed_at)
         self.assertTrue(all(pi.status == '' for pi in packaging_ca.packaging_items.all()))
 
+    def test_correction_targeting_packaging_does_not_undo_sensory_completion(self):
+        # Bug zgłoszony przez użytkownika: cofnięcie do korekty (z decyzji
+        # wysłanej ze strony sensorycznej) etapu pakowania nie powinno
+        # zdejmować ukończenia Etapu II ze strony sensorycznej - jej dane
+        # się nie zmieniały, więc nie trzeba jej zatwierdzać jeszcze raz.
+        self.client.post(f'/{self.sensory.pk}/etap3/', {
+            'decision': 'correction',
+            'correction_comment': 'Zle opakowanie',
+            'correction_return_stage': 'packaging',
+            'acceptance_signature': '',
+        })
+        sensory_ca = self.sensory.checklist_after
+        sensory_ca.refresh_from_db()
+        self.assertIsNotNone(sensory_ca.completed_at)
+
+    def test_recompleting_packaging_after_correction_reopens_release_button(self):
+        self.client.post(f'/{self.sensory.pk}/etap3/', {
+            'decision': 'correction',
+            'correction_comment': 'Zle opakowanie',
+            'correction_return_stage': 'packaging',
+            'acceptance_signature': '',
+        })
+        self.packaging.refresh_from_db()
+        packaging_items = self.packaging.checklist_after.packaging_items.all()
+        self.client.post(f'/{self.packaging.pk}/etap2/pakowanie/', {
+            'packaging-TOTAL_FORMS': str(packaging_items.count()),
+            'packaging-INITIAL_FORMS': str(packaging_items.count()),
+            **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            'complete': '1',
+        })
+        resp = self.client.get(f'/{self.sensory.pk}/')
+        self.assertTrue(resp.context['etap2_ready'])
+        self.assertContains(resp, 'Akceptacja SD &amp; Zwolnienie')
+
     def test_release_from_sensory_also_releases_linked_packaging(self):
         resp = self.client.post(f'/{self.sensory.pk}/etap3/', {
             'decision': 'accept',
@@ -920,3 +954,25 @@ class ProductionEditLinkingTests(TestCase):
         self.packaging.save(update_fields=['linked_production'])
         resp = self.client.post(f'/{self.sensory.pk}/etap2/odwiaz/')
         self.assertRedirects(resp, f'/{self.sensory.pk}/etap2/sensoryczne/')
+
+
+class TeamPersonDropdownTests(TestCase):
+    """Listy wyboru zespołu/akceptującego mają pokazywać czytelne Imię
+    Nazwisko (nie login w formacie imie.nazwisko), a akceptującym może być
+    też osoba z działu CE, nie tylko SD."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.ce = _make_user('cerson', 'CE', email='ce.person@example.com')
+        self.ce.first_name, self.ce.last_name = 'Ce', 'Person'
+        self.ce.save()
+
+    def test_new_production_form_shows_full_names_not_usernames(self):
+        resp = self.client.get('/nowa/')
+        self.assertContains(resp, 'Sduser SD')
+        self.assertNotContains(resp, '>sduser<')
+
+    def test_acceptor_choices_include_ce_department(self):
+        resp = self.client.get('/nowa/')
+        self.assertContains(resp, '<option value="1">Ce Person</option>'.replace('1', str(self.ce.pk)))

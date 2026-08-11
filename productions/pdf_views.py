@@ -56,7 +56,7 @@ def _build_team_sigs(prod, ca):
         ('SD',  'sig_sd', prod.person_sd),
         ('PP',  'sig_pp', prod.person_pp),
         ('CE',  'sig_ce', prod.person_ce),
-        ('Technologia', 'sig_te', prod.person_te),
+        ('PT', 'sig_te', prod.person_te),
     ]:
         sig = getattr(ca, fname, '')
         if person and sig:

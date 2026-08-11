@@ -17,7 +17,7 @@ DEPT_CHOICES = [
     ('SD',  'SD'),
     ('PP',  'PP'),
     ('CE',  'CE'),
-    ('TE',  'Technologia'),
+    ('TE',  'PT'),
 ]
 
 
@@ -142,7 +142,7 @@ class FirstProduction(models.Model):
     person_sd  = _person_fk('SD',  'prod_sd',  'SD')
     person_pp  = _person_fk('PP',  'prod_pp',  'PP')
     person_ce  = _person_fk('CE',  'prod_ce',  'CE')
-    person_te  = _person_fk('TE',  'prod_te',  'Technologia')
+    person_te  = _person_fk('TE',  'prod_te',  'PT')
 
     # ── Akceptacja / email ────────────────────────────────
     acceptor       = _person_fk('SD', 'prod_acceptor', 'Osoba akceptująca (SD)')
@@ -265,7 +265,7 @@ class ChecklistAfter(models.Model):
     person_sd  = models.CharField('SD',   max_length=100, blank=True)
     person_pp  = models.CharField('PP',   max_length=100, blank=True)
     person_ce  = models.CharField('CE',   max_length=100, blank=True)
-    person_te  = models.CharField('Technologia', max_length=100, blank=True)
+    person_te  = models.CharField('PT', max_length=100, blank=True)
     sample_start  = models.BooleanField('Próbka – Początek', default=False)
     sample_middle = models.BooleanField('Próbka – Środek',   default=False)
     sample_end    = models.BooleanField('Próbka – Koniec',   default=False)
@@ -302,7 +302,7 @@ class ChecklistAfter(models.Model):
     sig_sd  = models.TextField('Podpis SD',   blank=True)
     sig_pp  = models.TextField('Podpis PP',   blank=True)
     sig_ce  = models.TextField('Podpis CE',   blank=True)
-    sig_te  = models.TextField('Podpis Technologia', blank=True)
+    sig_te  = models.TextField('Podpis PT', blank=True)
     photo_1 = models.ImageField(upload_to='production_photos/', blank=True, null=True)
     photo_2 = models.ImageField(upload_to='production_photos/', blank=True, null=True)
     photo_3 = models.ImageField(upload_to='production_photos/', blank=True, null=True)

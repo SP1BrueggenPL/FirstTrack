@@ -75,7 +75,7 @@
     <td class="label">CE:</td><td>{% if ca and ca.person_ce %}{{ ca.person_ce }}{% else %}{{ production.person_ce.get_full_name|default:"" }}{% endif %}</td>
   </tr>
   <tr>
-    <td class="label">Technologia:</td><td colspan="7">{% if ca and ca.person_te %}{{ ca.person_te }}{% else %}{{ production.person_te.get_full_name|default:"" }}{% endif %}</td>
+    <td class="label">PT:</td><td colspan="7">{% if ca and ca.person_te %}{{ ca.person_te }}{% else %}{{ production.person_te.get_full_name|default:"" }}{% endif %}</td>
   </tr>
   <tr>
     <td class="label">Ocena próbki wzorcowej (pobranie):</td>
@@ -174,7 +174,7 @@
     {% if sig_sd %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_sd }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">SD – {{ ca.person_sd }}</div></td>{% endif %}
     {% if sig_pp %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_pp }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">PP – {{ ca.person_pp }}</div></td>{% endif %}
     {% if sig_ce %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_ce }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">CE – {{ ca.person_ce }}</div></td>{% endif %}
-    {% if sig_te %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_te }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">Techn. – {{ ca.person_te }}</div></td>{% endif %}
+    {% if sig_te %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_te }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">PT – {{ ca.person_te }}</div></td>{% endif %}
   </tr>
 </table>
 {% endif %}{% endwith %}{% endif %}

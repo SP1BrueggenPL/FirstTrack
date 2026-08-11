@@ -587,7 +587,7 @@ def _all_sig_fields(prod):
         ('SD',  'sig_sd',  prod.person_sd),
         ('PP',  'sig_pp',  prod.person_pp),
         ('CE',  'sig_ce',  prod.person_ce),
-        ('Technologia', 'sig_te', prod.person_te),
+        ('PT', 'sig_te', prod.person_te),
     ]
 
 
@@ -849,8 +849,6 @@ def release_production(request, pk):
 
             if decision == 'correction':
                 ca.final_acceptance = False
-                ca.completed_at = None
-                ca.save()
                 stage = ca.correction_return_stage
                 reset_prod = _linked_target_for_stage(prod, stage)
                 reset_ca = _get_or_create_checklist_after(reset_prod)
@@ -858,18 +856,26 @@ def release_production(request, pk):
                     reset_ca.sensory_params.all().update(status='', uwagi='', korekta='', kto='', kiedy='')
                 elif stage == 'packaging':
                     reset_ca.packaging_items.all().update(status='', uwagi='', korekta='', kto='', kiedy='')
+                reset_ca.completed_at = None
+                reset_ca.final_acceptance = False
+                # Dla produkcji niepowiązanej (albo korekty własnej strony)
+                # ca i reset_ca to ten sam wiersz - jeden save() wystarczy.
+                # Dla powiązanej pary tylko strona wskazana w "Powrót do
+                # etapu" traci ukończenie Etapu II (jej dane trzeba
+                # poprawić) - druga strona (ta, z której wysłano decyzję)
+                # ma Etap II nadal ukończony i nie powinna tracić tego
+                # statusu, inaczej po poprawieniu tylko wskazanej strony
+                # przycisk zwolnienia by się nie pokazał, dopóki ta druga,
+                # wcale niekorygowana strona nie zostałaby zatwierdzona
+                # jeszcze raz.
+                if reset_ca.pk == ca.pk:
+                    ca.save(update_fields=['final_acceptance', 'completed_at'])
+                else:
+                    ca.save(update_fields=['final_acceptance'])
+                    reset_ca.save(update_fields=['completed_at', 'final_acceptance'])
                 prod.status = 'etap2'
                 prod.save()
-                # Powiązana produkcja sensoryka/pakowanie to w praktyce jedna
-                # produkcja - korekta jednej strony musi też zresetować
-                # status/ukończenie checklisty drugiej, inaczej po ponownym
-                # zatwierdzeniu tej drugiej strony ta pierwsza (z której
-                # wysłano do korekty) zostałaby błędnie oznaczona jako
-                # ukończona/zaakceptowana, mimo że wciąż czeka na poprawki.
                 if reset_prod.pk != prod.pk:
-                    reset_ca.completed_at = None
-                    reset_ca.final_acceptance = False
-                    reset_ca.save(update_fields=['completed_at', 'final_acceptance'])
                     reset_prod.status = 'etap2'
                     reset_prod.save(update_fields=['status'])
                 messages.warning(
