@@ -19,6 +19,11 @@ DEPT_CHOICES = [
     ('CE',  'CE'),
     ('TE',  'PT'),
     ('SL',  'Sprzedaż Lubeck'),
+    # IT - tylko do oznaczenia konta w panelu użytkowników (np. admini
+    # techniczni bez udziału w produkcji). Celowo nieużywane w zespole
+    # produkcji/akceptującym (FirstProductionForm ma własną, jawną listę
+    # działów) i w checklistach - nie nadzoruje żadnego wiersza.
+    ('IT',  'IT'),
 ]
 
 
