@@ -32,7 +32,7 @@
               {% if form.department.errors %}<div class="text-danger small">{{ form.department.errors }}</div>{% endif %}
             </div>
             <div class="col-md-8">
-              <label class="form-label fw-semibold">Email służbowy *</label>
+              <label class="form-label fw-semibold">Email służbowy{% if form.fields.email.required %} *{% endif %}</label>
               {{ form.email }}
               {% if form.email.errors %}<div class="text-danger small">{{ form.email.errors }}</div>{% endif %}
             </div>

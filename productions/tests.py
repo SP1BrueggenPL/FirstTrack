@@ -741,6 +741,34 @@ class UserFormAndBulkImportTests(TestCase):
         self.assertEqual(user.first_name, 'Prince')
         self.assertEqual(user.last_name, '')
 
+    def test_create_user_without_email_derives_username_from_name(self):
+        resp = self.client.post('/uzytkownicy/nowy/', {
+            'full_name': 'Jan Kowalski',
+            'email': '',
+            'department': 'QA',
+            'chip_number': '33333',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        user = User.objects.get(username='jan.kowalski')
+        self.assertEqual(user.email, '')
+        self.assertEqual(user.first_name, 'Jan')
+
+    def test_two_users_without_email_do_not_collide_on_uniqueness_check(self):
+        for chip in ('44444', '55555'):
+            resp = self.client.post('/uzytkownicy/nowy/', {
+                'full_name': 'Adam Nowak', 'email': '', 'department': 'QA', 'chip_number': chip,
+            })
+            self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        usernames = set(User.objects.filter(first_name='Adam', last_name='Nowak').values_list('username', flat=True))
+        self.assertEqual(usernames, {'adam.nowak', 'adam.nowak1'})
+
+    def test_edit_form_still_requires_email(self):
+        resp = self.client.get('/uzytkownicy/nowy/')
+        self.assertNotContains(resp, 'Email służbowy *')
+        user = User.objects.create_user(username='existing', first_name='Existing', last_name='User')
+        resp = self.client.get(f'/uzytkownicy/{user.pk}/edytuj/')
+        self.assertContains(resp, 'Email służbowy *')
+
     def test_bulk_import_creates_users_and_reports_errors(self):
         import openpyxl
         from io import BytesIO
