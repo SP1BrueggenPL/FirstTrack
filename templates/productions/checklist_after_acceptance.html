@@ -87,18 +87,18 @@
     </div>
   </div>
 
-  <!-- Podgląd podpisów zespołu -->
+  <!-- Podgląd zdjęć zespołu -->
   {% if signed_team %}
   <div class="card mb-3">
-    <div class="card-header"><i class="bi bi-people me-2"></i>Podpisy zespołu z Etapu II</div>
+    <div class="card-header"><i class="bi bi-people me-2"></i>Zdjęcia zespołu z Etapu II</div>
     <div class="card-body">
       <div class="row g-2">
-        {% for role, fname, person, sig_data in signed_team %}
+        {% for role, fname, person, photo in signed_team %}
         <div class="col-auto">
           <div class="border rounded px-3 py-2 text-center small">
             <div class="text-muted">{{ role }}</div>
             <div class="fw-semibold">{{ person.get_full_name }}</div>
-            <img src="{{ sig_data }}" height="40" class="mt-1 d-block mx-auto">
+            <img src="{{ photo.url }}" height="60" class="mt-1 d-block mx-auto rounded">
           </div>
         </div>
         {% endfor %}

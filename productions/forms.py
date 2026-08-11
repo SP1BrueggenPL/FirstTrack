@@ -195,7 +195,7 @@ class FirstProductionForm(forms.ModelForm):
             'scope', 'data_produkcji', 'zmiany', 'layout', 'typ_produkcji', 'komentarz',
             'fert_number', 'rd_number', 'recipe', 'crm_project_nr',
             'person_rd', 'person_sc', 'person_ql', 'person_qa',
-            'person_sd', 'person_pp', 'person_ce', 'person_te',
+            'person_sd', 'person_pp', 'person_ce', 'person_te', 'person_sl',
             'acceptor',
         ]
         widgets = {
@@ -220,6 +220,7 @@ class FirstProductionForm(forms.ModelForm):
             'person_pp':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
             'person_ce':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
             'person_te':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
+            'person_sl':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
             'acceptor':       forms.Select(attrs={'class': 'form-select', 'id': 'id_acceptor'}),
         }
 
@@ -230,7 +231,7 @@ class FirstProductionForm(forms.ModelForm):
         depts = {
             'person_rd': 'RD', 'person_sc': 'SC', 'person_ql': 'QL',
             'person_qa': 'QA', 'person_sd': 'SD', 'person_pp': 'PP',
-            'person_ce': 'CE', 'person_te': 'TE',
+            'person_ce': 'CE', 'person_te': 'TE', 'person_sl': 'SL',
         }
         for field_name, dept in depts.items():
             self.fields[field_name].queryset = (
@@ -351,16 +352,19 @@ class ChecklistBeforeForm(forms.ModelForm):
 # Checklista Po
 # ──────────────────────────────────────────────────────────
 
-_SIG_WIDGETS = {
-    'sig_rd':  forms.HiddenInput(),
-    'sig_sc':  forms.HiddenInput(),
-    'sig_ql':  forms.HiddenInput(),
-    'sig_qa':  forms.HiddenInput(),
-    'sig_sd':  forms.HiddenInput(),
-    'sig_pp':  forms.HiddenInput(),
-    'sig_ce':  forms.HiddenInput(),
-    'sig_te':  forms.HiddenInput(),
+_TEAM_PHOTO_ATTRS = {'class': 'form-control form-control-sm', 'accept': 'image/*', 'capture': 'environment'}
+_TEAM_PHOTO_WIDGETS = {
+    'photo_rd': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
+    'photo_sc': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
+    'photo_ql': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
+    'photo_qa': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
+    'photo_sd': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
+    'photo_pp': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
+    'photo_ce': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
+    'photo_te': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
+    'photo_sl': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
 }
+_TEAM_PHOTO_FIELD_NAMES = list(_TEAM_PHOTO_WIDGETS.keys())
 
 # Krok 1 – parametry sensoryczne
 class ChecklistAfterSensoryForm(forms.ModelForm):
@@ -381,10 +385,10 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
             'sample_start', 'sample_middle', 'sample_end',
             'comparison_benchmark', 'comparison_lab', 'comparison_reference',
             'yield_kg', 'yield_takty', 'uwagi',
-            'sig_rd', 'sig_sc', 'sig_ql', 'sig_qa', 'sig_sd', 'sig_pp', 'sig_ce', 'sig_te',
+            *_TEAM_PHOTO_FIELD_NAMES,
         ]
         widgets = {
-            **_SIG_WIDGETS,
+            **_TEAM_PHOTO_WIDGETS,
             'yield_kg':       forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'kg/h'}),
             'yield_takty':    forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'takty'}),
             'uwagi':          forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 3}),
@@ -396,11 +400,11 @@ class ChecklistAfterPackagingForm(forms.ModelForm):
     class Meta:
         model = ChecklistAfter
         fields = [
-            'sig_rd', 'sig_sc', 'sig_ql', 'sig_qa', 'sig_sd', 'sig_pp', 'sig_ce', 'sig_te',
+            *_TEAM_PHOTO_FIELD_NAMES,
             'photo_1', 'photo_2', 'photo_3', 'photo_4', 'umk_count',
         ]
         widgets = {
-            **_SIG_WIDGETS,
+            **_TEAM_PHOTO_WIDGETS,
             'umk_count': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Liczba UMK'}),
             'photo_1': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),
             'photo_2': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),

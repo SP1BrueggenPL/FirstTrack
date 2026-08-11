@@ -360,6 +360,99 @@ class LinkedPdfDataTests(TestCase):
         self.assertGreater(len(data['packaging']), 0)
 
 
+class TeamPhotoTests(TestCase):
+    """Zdjęcia obecnych członków zespołu (zamiast odręcznego podpisu na
+    ekranie) - dodawane w Etapie II, pokazywane w PDF i dołączane do maili
+    procesowych."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.rd = _make_user('rduser', 'RD')
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full', person_rd=self.rd)
+
+    def test_sensory_form_has_multipart_encoding(self):
+        # Pola zdjęć zespołu są plikami - bez enctype="multipart/form-data"
+        # przeglądarka po cichu nie wysyła ich w ogóle (patrz analogiczny
+        # bug naprawiony wcześniej w formularzu akceptacji Etapu III).
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.assertContains(resp, 'enctype="multipart/form-data"')
+
+    def test_uploading_team_photo_saves_it(self):
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.prod.refresh_from_db()
+        sensory_params = self.prod.checklist_after.sensory_params.all()
+        photo = SimpleUploadedFile('rd.png', _1PX_PNG, content_type='image/png')
+        self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'photo_rd': photo,
+            'save': '1',
+        })
+        ca = self.prod.checklist_after
+        ca.refresh_from_db()
+        self.assertTrue(ca.photo_rd)
+
+    def test_pdf_data_merges_team_photos_from_both_sides(self):
+        sensory = FirstProduction.objects.create(
+            sap_zlecenie='S1', product_name='Sensory', scope='sensory', person_rd=self.rd)
+        sd2 = _make_user('sduser2', 'SD')
+        packaging = FirstProduction.objects.create(
+            sap_zlecenie='P1', product_name='Packaging', scope='packaging',
+            fert_number='F1', recipe='R1')
+        self.client.get(f'/{sensory.pk}/etap2/sensoryczne/')
+        self.client.get(f'/{packaging.pk}/etap2/pakowanie/')
+        self.client.post(f'/{sensory.pk}/etap2/powiaz-pakowanie/',
+                          {'packaging_production': packaging.pk})
+        # person_sd ustawiony PO powiązaniu - łączenie kopiuje wspólne dane
+        # zespołu ze strony sensorycznej na pakowanie (_copy_shared_production_data),
+        # więc ustawienie przed powiązaniem zostałoby nadpisane.
+        packaging.refresh_from_db()
+        packaging.person_sd = sd2
+        packaging.save(update_fields=['person_sd'])
+        sensory.refresh_from_db()
+
+        sensory.checklist_after.photo_rd = SimpleUploadedFile('a.png', _1PX_PNG, content_type='image/png')
+        sensory.checklist_after.save()
+        packaging.checklist_after.photo_sd = SimpleUploadedFile('b.png', _1PX_PNG, content_type='image/png')
+        packaging.checklist_after.save()
+
+        from .pdf_views import _linked_checklist_data
+        data = _linked_checklist_data(packaging)
+        self.assertEqual(len(data['team_photos']), 2)
+        self.assertEqual(len(data['team_photo_attachments']), 2)
+
+    def test_sensory_accepted_email_attaches_team_photo(self):
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.prod.refresh_from_db()
+        sensory_params = self.prod.checklist_after.sensory_params.all()
+        photo = SimpleUploadedFile('rd.png', _1PX_PNG, content_type='image/png')
+        self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'photo_rd': photo,
+            'next': '1',
+        })
+        accepted_mail = next(m for m in mail.outbox if 'Sensoryka zaakceptowana' in m.subject)
+        attachment_names = [a[0] for a in accepted_mail.attachments]
+        self.assertTrue(any(name.startswith('Zespol_') for name in attachment_names))
+
+    def test_sprzedaz_lubeck_department_selectable_and_recipient(self):
+        sl_user = _make_user('sluser', 'SL', email='sl@example.com')
+        resp = self.client.get('/nowa/')
+        self.assertContains(resp, 'Sluser SL')
+
+        prod = FirstProduction.objects.create(
+            sap_zlecenie='2', product_name='Y', scope='full', person_sl=sl_user)
+        from .views import _production_team_recipients
+        self.assertIn('sl@example.com', _production_team_recipients(prod))
+
+
 class SapPrefillDedupeTests(TestCase):
     """AI-odczytane zlecenie SAP, które już jest w systemie, nie jest dodawane
     drugi raz."""

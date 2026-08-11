@@ -18,6 +18,7 @@ DEPT_CHOICES = [
     ('PP',  'PP'),
     ('CE',  'CE'),
     ('TE',  'PT'),
+    ('SL',  'Sprzedaż Lubeck'),
 ]
 
 
@@ -143,6 +144,7 @@ class FirstProduction(models.Model):
     person_pp  = _person_fk('PP',  'prod_pp',  'PP')
     person_ce  = _person_fk('CE',  'prod_ce',  'CE')
     person_te  = _person_fk('TE',  'prod_te',  'PT')
+    person_sl  = _person_fk('SL',  'prod_sl',  'Sprzedaż Lubeck')
 
     # ── Akceptacja / email ────────────────────────────────
     acceptor       = _person_fk('SD', 'prod_acceptor', 'Osoba akceptująca (SD)')
@@ -266,6 +268,7 @@ class ChecklistAfter(models.Model):
     person_pp  = models.CharField('PP',   max_length=100, blank=True)
     person_ce  = models.CharField('CE',   max_length=100, blank=True)
     person_te  = models.CharField('PT', max_length=100, blank=True)
+    person_sl  = models.CharField('Sprzedaż Lubeck', max_length=100, blank=True)
     sample_start  = models.BooleanField('Próbka – Początek', default=False)
     sample_middle = models.BooleanField('Próbka – Środek',   default=False)
     sample_end    = models.BooleanField('Próbka – Koniec',   default=False)
@@ -295,14 +298,19 @@ class ChecklistAfter(models.Model):
     final_acceptance   = models.BooleanField('Akceptacja SD', null=True)
     acceptance_date    = models.DateField('Data akceptacji', null=True, blank=True)
     acceptance_signature = models.TextField('Podpis SD', blank=True)
-    sig_rd  = models.TextField('Podpis R&D',  blank=True)
-    sig_sc  = models.TextField('Podpis SC',   blank=True)
-    sig_ql  = models.TextField('Podpis QL',   blank=True)
-    sig_qa  = models.TextField('Podpis QA',   blank=True)
-    sig_sd  = models.TextField('Podpis SD',   blank=True)
-    sig_pp  = models.TextField('Podpis PP',   blank=True)
-    sig_ce  = models.TextField('Podpis CE',   blank=True)
-    sig_te  = models.TextField('Podpis PT', blank=True)
+    # Zdjęcie obecnego członka zespołu (zamiast odręcznego podpisu na
+    # ekranie) - dokumentuje obecność bez podpisu cyfrowego, a dodatkowo
+    # dołączane do maili procesowych (patrz _send_sensory_accepted_email /
+    # _send_release_email).
+    photo_rd = models.ImageField('Zdjęcie R&D', upload_to='team_photos/', blank=True, null=True)
+    photo_sc = models.ImageField('Zdjęcie SC',  upload_to='team_photos/', blank=True, null=True)
+    photo_ql = models.ImageField('Zdjęcie QL',  upload_to='team_photos/', blank=True, null=True)
+    photo_qa = models.ImageField('Zdjęcie QA',  upload_to='team_photos/', blank=True, null=True)
+    photo_sd = models.ImageField('Zdjęcie SD',  upload_to='team_photos/', blank=True, null=True)
+    photo_pp = models.ImageField('Zdjęcie PP',  upload_to='team_photos/', blank=True, null=True)
+    photo_ce = models.ImageField('Zdjęcie CE',  upload_to='team_photos/', blank=True, null=True)
+    photo_te = models.ImageField('Zdjęcie PT',  upload_to='team_photos/', blank=True, null=True)
+    photo_sl = models.ImageField('Zdjęcie Sprzedaż Lubeck', upload_to='team_photos/', blank=True, null=True)
     photo_1 = models.ImageField(upload_to='production_photos/', blank=True, null=True)
     photo_2 = models.ImageField(upload_to='production_photos/', blank=True, null=True)
     photo_3 = models.ImageField(upload_to='production_photos/', blank=True, null=True)
