@@ -4,6 +4,7 @@ from datetime import date
 
 from django.contrib.auth.models import User
 from django.core import mail
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 
@@ -757,6 +758,108 @@ class UserDeleteTests(TestCase):
         self.client.force_login(self.admin)
         resp = self.client.get('/uzytkownicy/')
         self.assertNotContains(resp, '<th>Login</th>')
+
+
+class ChipLoginAuthCodeTests(TestCase):
+    """Logowanie chip + kod autoryzujący ustawiany przez użytkownika przy
+    pierwszym logowaniu (i ponownie po zresetowaniu przez admina)."""
+
+    def setUp(self):
+        cache.clear()
+        self.user = _make_user('chipuser', 'QA')
+        self.user.profile.chip_number = '12345'
+        self.user.profile.save()
+
+    def _submit_chip(self, chip_number='12345'):
+        return self.client.post('/login/', {'chip_number': chip_number}, follow=True)
+
+    def test_first_login_prompts_to_set_code(self):
+        resp = self._submit_chip()
+        self.assertContains(resp, 'Nowy kod autoryzujący')
+        self.assertFalse(resp.wsgi_request.user.is_authenticated)
+
+    def test_wrong_chip_number_does_not_start_pending_flow(self):
+        resp = self._submit_chip(chip_number='99999')
+        self.assertContains(resp, 'Nieprawidłowy numer chip')
+        self.assertFalse(resp.wsgi_request.user.is_authenticated)
+
+    def test_set_code_mismatch_does_not_log_in(self):
+        self._submit_chip()
+        resp = self.client.post('/login/', {
+            'new_code': 'ABC123', 'new_code_confirm': 'XYZ999',
+        }, follow=True)
+        self.assertContains(resp, 'nie mają')
+        self.assertFalse(resp.wsgi_request.user.is_authenticated)
+        self.user.profile.refresh_from_db()
+        self.assertFalse(self.user.profile.has_auth_code)
+
+    def test_set_code_success_logs_in_and_hashes_code(self):
+        self._submit_chip()
+        resp = self.client.post('/login/', {
+            'new_code': 'ab12cd', 'new_code_confirm': 'ab12cd',
+        }, follow=True)
+        self.assertTrue(resp.wsgi_request.user.is_authenticated)
+        self.assertEqual(resp.wsgi_request.user.pk, self.user.pk)
+        self.user.profile.refresh_from_db()
+        self.assertTrue(self.user.profile.has_auth_code)
+        self.assertNotIn('AB12CD', self.user.profile.auth_code_hash)
+
+    def _set_initial_code(self, code='ab12cd'):
+        self._submit_chip()
+        self.client.post('/login/', {'new_code': code, 'new_code_confirm': code})
+        self.client.logout()
+        cache.clear()
+
+    def test_second_login_asks_for_existing_code(self):
+        self._set_initial_code()
+        resp = self._submit_chip()
+        self.assertContains(resp, 'Kod autoryzujący')
+        self.assertNotContains(resp, 'Nowy kod autoryzujący')
+        self.assertFalse(resp.wsgi_request.user.is_authenticated)
+
+    def test_verify_correct_code_logs_in(self):
+        self._set_initial_code(code='ab12cd')
+        self._submit_chip()
+        resp = self.client.post('/login/', {'auth_code': 'AB12CD'}, follow=True)
+        self.assertTrue(resp.wsgi_request.user.is_authenticated)
+
+    def test_verify_wrong_code_fails_and_locks_out_after_repeated_attempts(self):
+        self._set_initial_code(code='ab12cd')
+        self._submit_chip()
+        for _ in range(5):
+            resp = self.client.post('/login/', {'auth_code': 'wrongg'}, follow=True)
+        self.assertFalse(resp.wsgi_request.user.is_authenticated)
+        self.assertContains(resp, 'Zbyt wiele nieudanych prób')
+
+    def test_cancel_returns_to_chip_stage(self):
+        self._submit_chip()
+        resp = self.client.get('/login/?cancel=1', follow=True)
+        self.assertContains(resp, 'Numer chip')
+        self.assertNotContains(resp, 'Nowy kod autoryzujący')
+
+    def test_admin_reset_forces_code_setup_again(self):
+        self._set_initial_code()
+        admin = _make_user('chipadmin', 'SD')
+        admin.is_staff = True
+        admin.save()
+        self.client.force_login(admin)
+        resp = self.client.post(f'/uzytkownicy/{self.user.pk}/reset-kod/', follow=True)
+        self.assertContains(resp, 'zresetowany')
+        self.user.profile.refresh_from_db()
+        self.assertFalse(self.user.profile.has_auth_code)
+
+        self.client.logout()
+        cache.clear()
+        resp = self._submit_chip()
+        self.assertContains(resp, 'Nowy kod autoryzujący')
+
+    def test_non_staff_cannot_reset_auth_code(self):
+        self._set_initial_code()
+        other = _make_user('chipother', 'QA')
+        self.client.force_login(other)
+        self.client.post(f'/uzytkownicy/{self.user.pk}/reset-kod/')
+        self.user.profile.refresh_from_db()
+        self.assertTrue(self.user.profile.has_auth_code)
 
 
 class ProductionEditLinkingTests(TestCase):

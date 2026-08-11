@@ -34,6 +34,13 @@ logger = logging.getLogger(__name__)
 
 CHIP_LOGIN_MAX_ATTEMPTS = 5
 CHIP_LOGIN_LOCKOUT_SECONDS = 300
+AUTH_CODE_LENGTH = 6
+
+# Klucze sesji śledzące drugi krok logowania (kod autoryzujący) - chip jest
+# już zweryfikowany, ale użytkownik jeszcze nie jest zalogowany (auth_login
+# wywoływane dopiero po podaniu/ustawieniu poprawnego kodu).
+_PENDING_CHIP_USER_KEY = 'pending_chip_user_id'
+_PENDING_CHIP_NEXT_KEY = 'pending_chip_next'
 
 
 def _client_ip(request):
@@ -43,31 +50,100 @@ def _client_ip(request):
     return request.META.get('REMOTE_ADDR', 'unknown')
 
 
+def _safe_next(request, next_url):
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        return next_url
+    return ''
+
+
 def chip_login(request):
-    """Logowanie samym 5-cyfrowym numerem chip (bez loginu/hasła)."""
+    """Logowanie 5-cyfrowym numerem chip + 6-znakowym kodem autoryzującym.
+
+    Kod autoryzujący jest drugim składnikiem logowania - użytkownik ustawia
+    go sam przy pierwszym logowaniu (chip sam w sobie to fizyczna karta,
+    którą ktoś inny mógłby zobaczyć/użyć). Admin może wyzerować kod z panelu
+    użytkowników, jeśli ktoś go zapomni - wtedy przy najbliższym logowaniu
+    użytkownik ustawia nowy, tak jak za pierwszym razem."""
     if request.user.is_authenticated:
         return redirect('dashboard')
+
+    if request.GET.get('cancel'):
+        request.session.pop(_PENDING_CHIP_USER_KEY, None)
+        request.session.pop(_PENDING_CHIP_NEXT_KEY, None)
+        return redirect('login')
 
     cache_key = f'chip_login_fail_{_client_ip(request)}'
     locked_out = cache.get(cache_key, 0) >= CHIP_LOGIN_MAX_ATTEMPTS
     error = None
-    next_url = request.POST.get('next') or request.GET.get('next') or ''
+    next_url = (request.POST.get('next') or request.GET.get('next')
+                or request.session.get(_PENDING_CHIP_NEXT_KEY) or '')
+
+    pending_user = None
+    pending_user_id = request.session.get(_PENDING_CHIP_USER_KEY)
+    if pending_user_id:
+        pending_user = User.objects.filter(pk=pending_user_id, is_active=True).first()
+        if pending_user is None:
+            request.session.pop(_PENDING_CHIP_USER_KEY, None)
+
+    profile = None
+    stage = 'chip'
+    if pending_user is not None:
+        profile, _ = UserProfile.objects.get_or_create(user=pending_user)
+        stage = 'set_code' if not profile.has_auth_code else 'verify_code'
 
     if request.method == 'POST' and not locked_out:
-        chip_number = request.POST.get('chip_number', '').strip()
-        user = authenticate(request, chip_number=chip_number)
-        if user is not None:
-            cache.delete(cache_key)
-            auth_login(request, user)
-            if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
-                next_url = ''
-            return redirect(next_url or 'dashboard')
-        cache.set(cache_key, cache.get(cache_key, 0) + 1, CHIP_LOGIN_LOCKOUT_SECONDS)
-        error = True
+        if stage == 'chip':
+            chip_number = request.POST.get('chip_number', '').strip()
+            user = authenticate(request, chip_number=chip_number)
+            if user is not None:
+                request.session[_PENDING_CHIP_USER_KEY] = user.pk
+                if next_url:
+                    request.session[_PENDING_CHIP_NEXT_KEY] = next_url
+                return redirect('login')
+            cache.set(cache_key, cache.get(cache_key, 0) + 1, CHIP_LOGIN_LOCKOUT_SECONDS)
+            error = True
+
+        elif stage == 'set_code':
+            # .upper() - pole wygląda na wielkie litery (CSS text-transform),
+            # normalizujemy więc też wartość, żeby to, co widać, było tym, co
+            # faktycznie porównujemy przy kolejnych logowaniach.
+            code = request.POST.get('new_code', '').strip().upper()
+            code_confirm = request.POST.get('new_code_confirm', '').strip().upper()
+            if len(code) != AUTH_CODE_LENGTH or code != code_confirm:
+                error = 'code_mismatch'
+            else:
+                profile.set_auth_code(code)
+                profile.save(update_fields=['auth_code_hash'])
+                cache.delete(cache_key)
+                request.session.pop(_PENDING_CHIP_USER_KEY, None)
+                request.session.pop(_PENDING_CHIP_NEXT_KEY, None)
+                # Backend jawnie - `pending_user` jest tu świeżo pobrany z bazy
+                # (nie obiektem zwróconym przez authenticate() w poprzednim
+                # requeście), więc nie ma na sobie atrybutu `.backend`, którego
+                # login() normalnie by szukał - a mamy kilka backendów.
+                auth_login(request, pending_user, backend='productions.auth_backends.ChipNumberBackend')
+                return redirect(_safe_next(request, next_url) or 'dashboard')
+
+        elif stage == 'verify_code':
+            code = request.POST.get('auth_code', '').strip().upper()
+            if profile.check_auth_code(code):
+                cache.delete(cache_key)
+                request.session.pop(_PENDING_CHIP_USER_KEY, None)
+                request.session.pop(_PENDING_CHIP_NEXT_KEY, None)
+                # Backend jawnie - `pending_user` jest tu świeżo pobrany z bazy
+                # (nie obiektem zwróconym przez authenticate() w poprzednim
+                # requeście), więc nie ma na sobie atrybutu `.backend`, którego
+                # login() normalnie by szukał - a mamy kilka backendów.
+                auth_login(request, pending_user, backend='productions.auth_backends.ChipNumberBackend')
+                return redirect(_safe_next(request, next_url) or 'dashboard')
+            cache.set(cache_key, cache.get(cache_key, 0) + 1, CHIP_LOGIN_LOCKOUT_SECONDS)
+            error = True
+
         locked_out = cache.get(cache_key, 0) >= CHIP_LOGIN_MAX_ATTEMPTS
 
     return render(request, 'productions/login.html', {
         'error': error, 'locked_out': locked_out, 'next': next_url,
+        'stage': stage, 'auth_code_length': AUTH_CODE_LENGTH,
     })
 
 
@@ -1315,6 +1391,7 @@ def user_edit(request, pk):
 
     return render(request, 'productions/user_form.html', {
         'form': form, 'edit_user': user, 'title': f'Edytuj: {user.get_full_name()}',
+        'has_auth_code': profile.has_auth_code,
     })
 
 
@@ -1332,6 +1409,27 @@ def user_delete(request, pk):
     user.delete()
     messages.success(request, f'Konto „{name}" zostało usunięte.')
     return redirect('user_list')
+
+
+@login_required
+@require_POST
+def user_reset_auth_code(request, pk):
+    """Zeruje kod autoryzujący - przy najbliższym logowaniu (po podaniu
+    poprawnego numeru chip) użytkownik ustawi nowy, tak jak za pierwszym
+    razem. Na wypadek, gdyby ktoś zapomniał swojego kodu."""
+    if not request.user.is_staff:
+        messages.error(request, 'Brak uprawnień do zresetowania kodu autoryzującego.')
+        return redirect('user_list')
+    user = get_object_or_404(User, pk=pk)
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    profile.auth_code_hash = ''
+    profile.save(update_fields=['auth_code_hash'])
+    messages.success(
+        request,
+        f'Kod autoryzujący dla {user.get_full_name()} został zresetowany - '
+        'ustawi nowy przy najbliższym logowaniu.',
+    )
+    return redirect('user_edit', pk=pk)
 
 
 @login_required

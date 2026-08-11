@@ -32,6 +32,7 @@ urlpatterns = [
     path('uzytkownicy/import/', views.user_bulk_import, name='user_bulk_import'),
     path('uzytkownicy/<int:pk>/edytuj/', views.user_edit, name='user_edit'),
     path('uzytkownicy/<int:pk>/chip/', views.user_chip, name='user_chip'),
+    path('uzytkownicy/<int:pk>/reset-kod/', views.user_reset_auth_code, name='user_reset_auth_code'),
     path('uzytkownicy/<int:pk>/usun/', views.user_delete, name='user_delete'),
 
     # Zarządzanie – stała pula adresów email (pierwsza produkcja)
