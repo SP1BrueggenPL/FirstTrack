@@ -75,7 +75,8 @@
     <td class="label">CE:</td><td>{% if ca and ca.person_ce %}{{ ca.person_ce }}{% else %}{{ production.person_ce.get_full_name|default:"" }}{% endif %}</td>
   </tr>
   <tr>
-    <td class="label">Technologia:</td><td colspan="7">{% if ca and ca.person_te %}{{ ca.person_te }}{% else %}{{ production.person_te.get_full_name|default:"" }}{% endif %}</td>
+    <td class="label">PT:</td><td>{% if ca and ca.person_te %}{{ ca.person_te }}{% else %}{{ production.person_te.get_full_name|default:"" }}{% endif %}</td>
+    <td class="label">Sprzedaż Lubeck:</td><td colspan="3">{% if ca and ca.person_sl %}{{ ca.person_sl }}{% else %}{{ production.person_sl.get_full_name|default:"" }}{% endif %}</td>
   </tr>
   <tr>
     <td class="label">Ocena próbki wzorcowej (pobranie):</td>
@@ -160,24 +161,19 @@
   </tr>
 </table>
 
-{% if ca %}{% with sig_rd=ca.sig_rd sig_sc=ca.sig_sc sig_ql=ca.sig_ql sig_qa=ca.sig_qa sig_sd=ca.sig_sd sig_pp=ca.sig_pp sig_ce=ca.sig_ce sig_te=ca.sig_te %}
-{% if sig_rd or sig_sc or sig_ql or sig_qa or sig_sd or sig_pp or sig_ce or sig_te %}
-<table class="info-grid" style="margin-bottom:5px;">
-  <tr>
-    <td colspan="8" style="background:var(--light-bg);font-weight:bold;padding:2px 4px;">Podpisy zespołu:</td>
-  </tr>
-  <tr style="height:48px;vertical-align:bottom;">
-    {% if sig_rd %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_rd }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">R&amp;D – {{ ca.person_rd }}</div></td>{% endif %}
-    {% if sig_sc %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_sc }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">SC – {{ ca.person_sc }}</div></td>{% endif %}
-    {% if sig_ql %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_ql }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">QL – {{ ca.person_ql }}</div></td>{% endif %}
-    {% if sig_qa %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_qa }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">QA – {{ ca.person_qa }}</div></td>{% endif %}
-    {% if sig_sd %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_sd }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">SD – {{ ca.person_sd }}</div></td>{% endif %}
-    {% if sig_pp %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_pp }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">PP – {{ ca.person_pp }}</div></td>{% endif %}
-    {% if sig_ce %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_ce }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">CE – {{ ca.person_ce }}</div></td>{% endif %}
-    {% if sig_te %}<td style="text-align:center;width:12.5%;border:1px solid #000;padding:2px;"><img src="{{ sig_te }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;"><div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">Techn. – {{ ca.person_te }}</div></td>{% endif %}
-  </tr>
-</table>
-{% endif %}{% endwith %}{% endif %}
+{% if team_photos %}
+<div style="margin-bottom:5px;">
+  <div style="background:var(--light-bg);font-weight:bold;padding:2px 4px;font-size:9px;">Zdjęcia zespołu:</div>
+  <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:2px;">
+    {% for role, person_name, photo_uri in team_photos %}
+    <div style="text-align:center;width:12%;border:1px solid #000;padding:2px;">
+      <img src="{{ photo_uri }}" style="max-height:36px;max-width:100%;display:block;margin:0 auto;">
+      <div style="font-size:7px;border-top:1px solid #999;margin-top:1px;">{{ role }} – {{ person_name }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
 
 {% if photo_uris %}
 <table class="info-grid" style="margin-bottom:5px;">

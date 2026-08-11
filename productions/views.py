@@ -493,14 +493,53 @@ def production_detail(request, pk):
 # Etap I – Checklista przed
 # ──────────────────────────────────────────────
 
+# Każdy wiersz checklisty ma jeden lub więcej działów nadzorujących (patrz
+# kolumna "Nadzór" w checklist_before.html) - poza swoim działem użytkownik
+# widzi wiersz, ale nie może go edytować. Wiersze testu pakowania (nadzór
+# wpisywany ręcznie per pozycja, nie stały dział) i "Linia pakująca" w
+# nagłówku nie mają tu odpowiednika - zostają edytowalne dla każdego.
+CHECKLIST_BEFORE_ROW_FIELDS = [
+    (['order_updated_status', 'order_updated_uwagi'], ['SC']),
+    (['pwpr_status', 'pwpr_uwagi'], ['SC']),
+    (['analysis_form_status', 'analysis_form_version'], ['QA']),
+    (['zero_sample_status', 'zero_sample_uwagi'], ['RD', 'QL']),
+    (['production_card_status', 'production_card_uwagi'], ['RD', 'QA']),
+    (['machine_suitable_status', 'machine_suitable_uwagi'], ['CE', 'PP']),
+    (['packaging_layout_status', 'packaging_layout_uwagi'], ['SD']),
+    (['collective_label_status', 'collective_label_uwagi'], ['SD']),
+    (['date_format_status', 'date_format_uwagi'], ['SD']),
+    (['bom_set_status', 'bom_set_uwagi'], ['QA']),
+    (['planned_yield_kg', 'planned_yield_takty'], ['PP', 'RD']),
+    (['additional_samples_status', 'additional_samples_count'], ['SD']),
+]
+
+
+def _lock_checklist_before_rows_to_department(form, user):
+    """Poza własnym działem nadzorującym pola wiersza są tylko do odczytu -
+    disabled=True sprawia, że Django ignoruje przesłaną wartość i przy
+    zapisie zachowuje dotychczasową (patrz BaseForm._clean_fields), więc
+    ograniczenie działa nawet gdyby ktoś ręcznie odblokował pole w
+    przeglądarce. Administratorzy (is_staff) mogą edytować wszystko."""
+    if user.is_staff:
+        return
+    dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
+    for field_names, allowed_depts in CHECKLIST_BEFORE_ROW_FIELDS:
+        if dept in allowed_depts:
+            continue
+        for field_name in field_names:
+            form.fields[field_name].disabled = True
+
+
 @login_required
 def checklist_before(request, pk):
     prod     = get_object_or_404(FirstProduction, pk=pk)
     instance = getattr(prod, 'checklist_before', None)
 
     form = ChecklistBeforeForm(instance=instance, initial={'packaging_line': prod.packaging_line})
+    _lock_checklist_before_rows_to_department(form, request.user)
     if request.method == 'POST':
         form = ChecklistBeforeForm(request.POST, instance=instance)
+        _lock_checklist_before_rows_to_department(form, request.user)
         if form.is_valid():
             cb = form.save(commit=False)
             cb.production = prod
@@ -579,15 +618,18 @@ def _etap2_fully_done(prod):
 
 
 def _all_sig_fields(prod):
+    """Nazwa historyczna (dawniej podpisy) - teraz zwraca pola zdjęć
+    obecnych członków zespołu (patrz ChecklistAfter.photo_rd itd.)."""
     return [
-        ('R&D', 'sig_rd',  prod.person_rd),
-        ('SC',  'sig_sc',  prod.person_sc),
-        ('QL',  'sig_ql',  prod.person_ql),
-        ('QA',  'sig_qa',  prod.person_qa),
-        ('SD',  'sig_sd',  prod.person_sd),
-        ('PP',  'sig_pp',  prod.person_pp),
-        ('CE',  'sig_ce',  prod.person_ce),
-        ('Technologia', 'sig_te', prod.person_te),
+        ('R&D', 'photo_rd', prod.person_rd),
+        ('SC',  'photo_sc', prod.person_sc),
+        ('QL',  'photo_ql', prod.person_ql),
+        ('QA',  'photo_qa', prod.person_qa),
+        ('SD',  'photo_sd', prod.person_sd),
+        ('PP',  'photo_pp', prod.person_pp),
+        ('CE',  'photo_ce', prod.person_ce),
+        ('PT',  'photo_te', prod.person_te),
+        ('Sprzedaż Lubeck', 'photo_sl', prod.person_sl),
     ]
 
 
@@ -613,7 +655,7 @@ def checklist_after_sensory(request, pk):
     form = ChecklistAfterSensoryForm(instance=instance)
 
     if request.method == 'POST':
-        form       = ChecklistAfterSensoryForm(request.POST, instance=instance)
+        form       = ChecklistAfterSensoryForm(request.POST, request.FILES, instance=instance)
         sensory_fs = SensoryParamFormSet(request.POST, queryset=instance.sensory_params.all(), prefix='sensory')
         if form.is_valid() and sensory_fs.is_valid():
             ca = form.save(commit=False)
@@ -645,7 +687,7 @@ def checklist_after_sensory(request, pk):
         'sensory_fs': sensory_fs,
         'production': prod,
         'checklist': instance,
-        'team_sig_fields': _all_sig_fields(prod),
+        'team_photo_fields': _all_sig_fields(prod),
         'link_form': link_form,
         'step': 1,
     })
@@ -670,7 +712,7 @@ _SHARED_PRODUCTION_FIELDS = [
     'data_produkcji', 'zmiany', 'layout', 'typ_produkcji', 'komentarz',
     'packaging_line', 'rd_number', 'recipe', 'crm_project_nr',
     'person_rd', 'person_sc', 'person_ql', 'person_qa',
-    'person_sd', 'person_pp', 'person_ce', 'person_te', 'acceptor',
+    'person_sd', 'person_pp', 'person_ce', 'person_te', 'person_sl', 'acceptor',
 ]
 
 # Pola ChecklistBefore kopiowane razem z powiązaniem (bez pk/production/
@@ -849,8 +891,6 @@ def release_production(request, pk):
 
             if decision == 'correction':
                 ca.final_acceptance = False
-                ca.completed_at = None
-                ca.save()
                 stage = ca.correction_return_stage
                 reset_prod = _linked_target_for_stage(prod, stage)
                 reset_ca = _get_or_create_checklist_after(reset_prod)
@@ -858,18 +898,26 @@ def release_production(request, pk):
                     reset_ca.sensory_params.all().update(status='', uwagi='', korekta='', kto='', kiedy='')
                 elif stage == 'packaging':
                     reset_ca.packaging_items.all().update(status='', uwagi='', korekta='', kto='', kiedy='')
+                reset_ca.completed_at = None
+                reset_ca.final_acceptance = False
+                # Dla produkcji niepowiązanej (albo korekty własnej strony)
+                # ca i reset_ca to ten sam wiersz - jeden save() wystarczy.
+                # Dla powiązanej pary tylko strona wskazana w "Powrót do
+                # etapu" traci ukończenie Etapu II (jej dane trzeba
+                # poprawić) - druga strona (ta, z której wysłano decyzję)
+                # ma Etap II nadal ukończony i nie powinna tracić tego
+                # statusu, inaczej po poprawieniu tylko wskazanej strony
+                # przycisk zwolnienia by się nie pokazał, dopóki ta druga,
+                # wcale niekorygowana strona nie zostałaby zatwierdzona
+                # jeszcze raz.
+                if reset_ca.pk == ca.pk:
+                    ca.save(update_fields=['final_acceptance', 'completed_at'])
+                else:
+                    ca.save(update_fields=['final_acceptance'])
+                    reset_ca.save(update_fields=['completed_at', 'final_acceptance'])
                 prod.status = 'etap2'
                 prod.save()
-                # Powiązana produkcja sensoryka/pakowanie to w praktyce jedna
-                # produkcja - korekta jednej strony musi też zresetować
-                # status/ukończenie checklisty drugiej, inaczej po ponownym
-                # zatwierdzeniu tej drugiej strony ta pierwsza (z której
-                # wysłano do korekty) zostałaby błędnie oznaczona jako
-                # ukończona/zaakceptowana, mimo że wciąż czeka na poprawki.
                 if reset_prod.pk != prod.pk:
-                    reset_ca.completed_at = None
-                    reset_ca.final_acceptance = False
-                    reset_ca.save(update_fields=['completed_at', 'final_acceptance'])
                     reset_prod.status = 'etap2'
                     reset_prod.save(update_fields=['status'])
                 messages.warning(
@@ -950,7 +998,7 @@ def send_production_email(request, pk):
     # Reszta zespołu przypisanego do tej konkretnej produkcji
     team_fields = [
         'person_rd', 'person_sc', 'person_ql', 'person_qa',
-        'person_sd', 'person_pp', 'person_ce', 'person_te',
+        'person_sd', 'person_pp', 'person_ce', 'person_te', 'person_sl',
     ]
     for field in team_fields:
         person = getattr(prod, field)
@@ -1083,7 +1131,7 @@ def _production_team_recipients(prod):
     )
     team_fields = [
         'person_rd', 'person_sc', 'person_ql', 'person_qa',
-        'person_sd', 'person_pp', 'person_ce', 'person_te',
+        'person_sd', 'person_pp', 'person_ce', 'person_te', 'person_sl',
     ]
     for field in team_fields:
         person = getattr(prod, field)
@@ -1158,7 +1206,7 @@ def _send_sensory_accepted_email(prod, ca):
         for role, fname, person in _all_sig_fields(prod)
         if person and getattr(ca, fname)
     ]
-    signed_lines = [f'  {role}: {name}' for role, name in signed] or ['  (brak podpisów)']
+    signed_lines = [f'  {role}: {name}' for role, name in signed] or ['  (brak zdjęć zespołu)']
     subject = f'[FirstTrack] Sensoryka zaakceptowana – {prod.product_name}'
     body = '\n'.join([
         f'Parametry sensoryczne dla produkcji „{prod.product_name}" zostały zaakceptowane.',
@@ -1171,7 +1219,12 @@ def _send_sensory_accepted_email(prod, ca):
         '',
         '-- FirstTrack, H. & J. Brüggen KG --',
     ])
-    _send_and_log(prod, subject, body, recipients)
+    email = EmailMessage(subject=subject, body=body,
+                         from_email=settings.DEFAULT_FROM_EMAIL, to=recipients)
+    from .pdf_views import _build_team_photo_attachments
+    for filename, data, mime in _build_team_photo_attachments(prod, ca):
+        email.attach(f'Zespol_{filename}', data, mime)
+    _send_and_log(prod, subject, body, recipients, email_message=email)
 
 
 def _packaging_accepted_lines(prod, ca):
@@ -1182,7 +1235,7 @@ def _packaging_accepted_lines(prod, ca):
         for role, fname, person in _all_sig_fields(prod)
         if person and getattr(ca, fname)
     ]
-    signed_lines = [f'  {role}: {name}' for role, name in signed] or ['  (brak podpisów)']
+    signed_lines = [f'  {role}: {name}' for role, name in signed] or ['  (brak zdjęć zespołu)']
     return [
         f'Etap II (pakowanie) dla produkcji „{prod.product_name}" został zaakceptowany.',
         'Zespół, który zaakceptował pakowanie:',
@@ -1212,7 +1265,7 @@ def _send_release_email(prod, ca):
         '',
         f'Liczba UMK do śluzy: {ca.umk_count or "–"}',
         '',
-        'W załączniku: checklista końcowa (PDF) oraz zdjęcia z akceptacji.',
+        'W załączniku: checklista końcowa (PDF), zdjęcia z akceptacji oraz zdjęcia zespołu.',
         '',
         '-- FirstTrack, H. & J. Brüggen KG --',
     ]
@@ -1230,9 +1283,14 @@ def _send_release_email(prod, ca):
 
     # Zdjęcia w PDF są zmniejszone do layoutu strony - dołączamy je też jako
     # osobne pliki, żeby dało się je otworzyć w pełnej rozdzielczości.
+    # Dla powiązanej pary sensoryka/pakowanie _linked_checklist_data złącza
+    # zdjęcia (akceptacji i zespołu) z obu stron w jeden mail.
     from .pdf_views import _linked_checklist_data
-    for i, (filename, data, mime) in enumerate(_linked_checklist_data(prod)['photo_attachments'], start=1):
+    linked_data = _linked_checklist_data(prod)
+    for i, (filename, data, mime) in enumerate(linked_data['photo_attachments'], start=1):
         email.attach(f'Zdjecie_{i}_{filename}', data, mime)
+    for filename, data, mime in linked_data['team_photo_attachments']:
+        email.attach(f'Zespol_{filename}', data, mime)
 
     _send_and_log(prod, subject, body, recipients, email_message=email)
 

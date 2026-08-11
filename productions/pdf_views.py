@@ -46,22 +46,17 @@ def _render_pdf(template_name, context):
         ) from e
 
 
-def _build_team_sigs(prod, ca):
-    sigs = []
-    for role, fname, person in [
-        ('R&D', 'sig_rd', prod.person_rd),
-        ('SC',  'sig_sc', prod.person_sc),
-        ('QL',  'sig_ql', prod.person_ql),
-        ('QA',  'sig_qa', prod.person_qa),
-        ('SD',  'sig_sd', prod.person_sd),
-        ('PP',  'sig_pp', prod.person_pp),
-        ('CE',  'sig_ce', prod.person_ce),
-        ('Technologia', 'sig_te', prod.person_te),
-    ]:
-        sig = getattr(ca, fname, '')
-        if person and sig:
-            sigs.append((role, person.get_full_name(), sig))
-    return sigs
+TEAM_PHOTO_FIELDS = [
+    ('R&D', 'photo_rd', 'person_rd'),
+    ('SC',  'photo_sc', 'person_sc'),
+    ('QL',  'photo_ql', 'person_ql'),
+    ('QA',  'photo_qa', 'person_qa'),
+    ('SD',  'photo_sd', 'person_sd'),
+    ('PP',  'photo_pp', 'person_pp'),
+    ('CE',  'photo_ce', 'person_ce'),
+    ('PT',  'photo_te', 'person_te'),
+    ('Sprzedaż Lubeck', 'photo_sl', 'person_sl'),
+]
 
 
 def _photo_data_uri(image_field):
@@ -115,6 +110,40 @@ def _checklist_photo_attachments(ca):
     return [a for a in atts if a]
 
 
+def _build_team_photos(prod, ca):
+    """Zdjęcia obecnych członków zespołu jako (rola, imię i nazwisko,
+    data URI) - do wbudowania w PDF, tylko dla osób faktycznie przypisanych
+    do produkcji i tylko gdy zdjęcie zostało dodane."""
+    if not ca:
+        return []
+    photos = []
+    for role, photo_field, person_field in TEAM_PHOTO_FIELDS:
+        person = getattr(prod, person_field)
+        if not person:
+            continue
+        uri = _photo_data_uri(getattr(ca, photo_field, None))
+        if uri:
+            photos.append((role, person.get_full_name(), uri))
+    return photos
+
+
+def _build_team_photo_attachments(prod, ca):
+    """To samo co _build_team_photos, ale jako (nazwa, bajty, mimetype) do
+    doczepienia do maila w oryginalnej rozdzielczości."""
+    if not ca:
+        return []
+    atts = []
+    for role, photo_field, person_field in TEAM_PHOTO_FIELDS:
+        person = getattr(prod, person_field)
+        if not person:
+            continue
+        att = _photo_attachment(getattr(ca, photo_field, None))
+        if att:
+            filename, data, mime = att
+            atts.append((f'{role}_{filename}', data, mime))
+    return atts
+
+
 def _linked_checklist_data(prod):
     """Powiązana para sensoryka/pakowanie jest w praktyce jedną produkcją -
     parametry sensoryczne i pozycje pakowania fizycznie żyją na tej z dwóch
@@ -132,19 +161,21 @@ def _linked_checklist_data(prod):
     sensory_ca   = getattr(sensory_prod, 'checklist_after', None)
     packaging_ca = getattr(packaging_prod, 'checklist_after', None)
 
-    team_sigs = _build_team_sigs(sensory_prod, sensory_ca) if sensory_ca else []
+    team_photos = _build_team_photos(sensory_prod, sensory_ca)
+    team_photo_attachments = _build_team_photo_attachments(sensory_prod, sensory_ca)
     photo_uris = _checklist_photo_uris(sensory_ca)
     photo_attachments = _checklist_photo_attachments(sensory_ca)
     if packaging_prod.pk != sensory_prod.pk:
-        if packaging_ca:
-            team_sigs = team_sigs + _build_team_sigs(packaging_prod, packaging_ca)
+        team_photos = team_photos + _build_team_photos(packaging_prod, packaging_ca)
+        team_photo_attachments = team_photo_attachments + _build_team_photo_attachments(packaging_prod, packaging_ca)
         photo_uris = photo_uris + _checklist_photo_uris(packaging_ca)
         photo_attachments = photo_attachments + _checklist_photo_attachments(packaging_ca)
 
     return {
         'sensory': sensory_ca.sensory_params.all() if sensory_ca else [],
         'packaging': packaging_ca.packaging_items.all() if packaging_ca else [],
-        'team_sigs': team_sigs,
+        'team_photos': team_photos,
+        'team_photo_attachments': team_photo_attachments,
         'photo_uris': photo_uris,
         'photo_attachments': photo_attachments,
     }
@@ -203,7 +234,7 @@ def pdf_etap3(request, pk):
             cb = getattr(prod, 'checklist_before', None)
             pdf = _render_pdf('productions/pdf/etap3.html', {
                 'production': prod, 'cb': cb, 'ca': None,
-                'sensory': [], 'packaging': [], 'team_sigs': [], 'photo_uris': [],
+                'sensory': [], 'packaging': [], 'team_photos': [], 'photo_uris': [],
             })
     except PdfGenerationError as e:
         messages.error(request, str(e))

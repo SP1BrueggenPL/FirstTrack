@@ -1,8 +1,9 @@
-<div class="status-radio">
+<div class="status-radio{% if field.field.disabled %} status-radio-disabled{% endif %}">
   {% for val, lbl in field.field.choices %}
   <span>
     <input type="radio" name="{{ field.html_name }}" id="{{ field.auto_id }}_{{ forloop.counter }}"
-           value="{{ val }}" {% if field.value == val %}checked{% endif %}>
+           value="{{ val }}" {% if field.value == val %}checked{% endif %}
+           {% if field.field.disabled %}disabled{% endif %}>
     <label for="{{ field.auto_id }}_{{ forloop.counter }}"
            class="{% if val == 'tak' %}tak{% elif val == 'nie' %}nie{% elif val == 'nd' %}nd{% endif %}">
       {{ lbl }}

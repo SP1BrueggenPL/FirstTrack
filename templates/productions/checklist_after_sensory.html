@@ -1,4 +1,5 @@
 {% extends "productions/base.html" %}
+{% load production_extras %}
 {% block title %}Etap II Krok 1 – {{ production.product_name }}{% endblock %}
 
 {% block content %}
@@ -72,7 +73,7 @@
 </div>
 {% endif %}
 
-<form method="post">
+<form method="post" enctype="multipart/form-data">
   {% csrf_token %}
   {{ sensory_fs.management_form }}
 
@@ -181,24 +182,21 @@
     </div>
   </div>
 
-  <!-- Podpisy -->
+  <!-- Zdjęcia zespołu -->
   <div class="card mb-3">
-    <div class="card-header"><i class="bi bi-pen me-2"></i>Podpisy obecnych członków zespołu</div>
+    <div class="card-header"><i class="bi bi-camera me-2"></i>Zdjęcia obecnych członków zespołu</div>
     <div class="card-body">
-      {{ form.sig_rd }}{{ form.sig_sc }}{{ form.sig_ql }}{{ form.sig_qa }}
-      {{ form.sig_sd }}{{ form.sig_pp }}{{ form.sig_ce }}{{ form.sig_te }}
-      {% if team_sig_fields %}
+      {% if team_photo_fields %}
       <div class="row g-3">
-        {% for role, field_name, person in team_sig_fields %}
+        {% for role, field_name, person in team_photo_fields %}
         {% if person %}
         <div class="col-md-4 col-lg-3">
           <div class="small fw-semibold mb-1">{{ role }} – {{ person.get_full_name }}</div>
-          <div class="border rounded bg-white" style="touch-action:none; cursor:crosshair;">
-            <canvas class="team-sig-canvas" data-field="{{ field_name }}" style="width:100%; height:110px; display:block;"></canvas>
-          </div>
-          <button type="button" class="btn btn-outline-secondary btn-sm mt-1 sig-clear-btn" data-field="{{ field_name }}">
-            <i class="bi bi-eraser me-1"></i>Wyczyść
-          </button>
+          <input type="file" name="{{ field_name }}" accept="image/*" capture="environment"
+                 class="form-control form-control-sm">
+          {% with photo=checklist|attr:field_name %}
+          {% if photo %}<img src="{{ photo.url }}" class="mt-1 rounded border" height="70">{% endif %}
+          {% endwith %}
         </div>
         {% endif %}
         {% endfor %}
@@ -223,10 +221,4 @@
     <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary">Anuluj</a>
   </div>
 </form>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-{% include "productions/_sig_canvas_js.html" %}
-</script>
 {% endblock %}

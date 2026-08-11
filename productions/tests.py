@@ -205,6 +205,40 @@ class LinkedProductionCorrectionSyncTests(TestCase):
         self.assertIsNone(packaging_ca.completed_at)
         self.assertTrue(all(pi.status == '' for pi in packaging_ca.packaging_items.all()))
 
+    def test_correction_targeting_packaging_does_not_undo_sensory_completion(self):
+        # Bug zgłoszony przez użytkownika: cofnięcie do korekty (z decyzji
+        # wysłanej ze strony sensorycznej) etapu pakowania nie powinno
+        # zdejmować ukończenia Etapu II ze strony sensorycznej - jej dane
+        # się nie zmieniały, więc nie trzeba jej zatwierdzać jeszcze raz.
+        self.client.post(f'/{self.sensory.pk}/etap3/', {
+            'decision': 'correction',
+            'correction_comment': 'Zle opakowanie',
+            'correction_return_stage': 'packaging',
+            'acceptance_signature': '',
+        })
+        sensory_ca = self.sensory.checklist_after
+        sensory_ca.refresh_from_db()
+        self.assertIsNotNone(sensory_ca.completed_at)
+
+    def test_recompleting_packaging_after_correction_reopens_release_button(self):
+        self.client.post(f'/{self.sensory.pk}/etap3/', {
+            'decision': 'correction',
+            'correction_comment': 'Zle opakowanie',
+            'correction_return_stage': 'packaging',
+            'acceptance_signature': '',
+        })
+        self.packaging.refresh_from_db()
+        packaging_items = self.packaging.checklist_after.packaging_items.all()
+        self.client.post(f'/{self.packaging.pk}/etap2/pakowanie/', {
+            'packaging-TOTAL_FORMS': str(packaging_items.count()),
+            'packaging-INITIAL_FORMS': str(packaging_items.count()),
+            **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            'complete': '1',
+        })
+        resp = self.client.get(f'/{self.sensory.pk}/')
+        self.assertTrue(resp.context['etap2_ready'])
+        self.assertContains(resp, 'Akceptacja SD &amp; Zwolnienie')
+
     def test_release_from_sensory_also_releases_linked_packaging(self):
         resp = self.client.post(f'/{self.sensory.pk}/etap3/', {
             'decision': 'accept',
@@ -324,6 +358,99 @@ class LinkedPdfDataTests(TestCase):
         data = _linked_checklist_data(self.sensory)
         self.assertGreater(len(data['sensory']), 0)
         self.assertGreater(len(data['packaging']), 0)
+
+
+class TeamPhotoTests(TestCase):
+    """Zdjęcia obecnych członków zespołu (zamiast odręcznego podpisu na
+    ekranie) - dodawane w Etapie II, pokazywane w PDF i dołączane do maili
+    procesowych."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.rd = _make_user('rduser', 'RD')
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full', person_rd=self.rd)
+
+    def test_sensory_form_has_multipart_encoding(self):
+        # Pola zdjęć zespołu są plikami - bez enctype="multipart/form-data"
+        # przeglądarka po cichu nie wysyła ich w ogóle (patrz analogiczny
+        # bug naprawiony wcześniej w formularzu akceptacji Etapu III).
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.assertContains(resp, 'enctype="multipart/form-data"')
+
+    def test_uploading_team_photo_saves_it(self):
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.prod.refresh_from_db()
+        sensory_params = self.prod.checklist_after.sensory_params.all()
+        photo = SimpleUploadedFile('rd.png', _1PX_PNG, content_type='image/png')
+        self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'photo_rd': photo,
+            'save': '1',
+        })
+        ca = self.prod.checklist_after
+        ca.refresh_from_db()
+        self.assertTrue(ca.photo_rd)
+
+    def test_pdf_data_merges_team_photos_from_both_sides(self):
+        sensory = FirstProduction.objects.create(
+            sap_zlecenie='S1', product_name='Sensory', scope='sensory', person_rd=self.rd)
+        sd2 = _make_user('sduser2', 'SD')
+        packaging = FirstProduction.objects.create(
+            sap_zlecenie='P1', product_name='Packaging', scope='packaging',
+            fert_number='F1', recipe='R1')
+        self.client.get(f'/{sensory.pk}/etap2/sensoryczne/')
+        self.client.get(f'/{packaging.pk}/etap2/pakowanie/')
+        self.client.post(f'/{sensory.pk}/etap2/powiaz-pakowanie/',
+                          {'packaging_production': packaging.pk})
+        # person_sd ustawiony PO powiązaniu - łączenie kopiuje wspólne dane
+        # zespołu ze strony sensorycznej na pakowanie (_copy_shared_production_data),
+        # więc ustawienie przed powiązaniem zostałoby nadpisane.
+        packaging.refresh_from_db()
+        packaging.person_sd = sd2
+        packaging.save(update_fields=['person_sd'])
+        sensory.refresh_from_db()
+
+        sensory.checklist_after.photo_rd = SimpleUploadedFile('a.png', _1PX_PNG, content_type='image/png')
+        sensory.checklist_after.save()
+        packaging.checklist_after.photo_sd = SimpleUploadedFile('b.png', _1PX_PNG, content_type='image/png')
+        packaging.checklist_after.save()
+
+        from .pdf_views import _linked_checklist_data
+        data = _linked_checklist_data(packaging)
+        self.assertEqual(len(data['team_photos']), 2)
+        self.assertEqual(len(data['team_photo_attachments']), 2)
+
+    def test_sensory_accepted_email_attaches_team_photo(self):
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.prod.refresh_from_db()
+        sensory_params = self.prod.checklist_after.sensory_params.all()
+        photo = SimpleUploadedFile('rd.png', _1PX_PNG, content_type='image/png')
+        self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'photo_rd': photo,
+            'next': '1',
+        })
+        accepted_mail = next(m for m in mail.outbox if 'Sensoryka zaakceptowana' in m.subject)
+        attachment_names = [a[0] for a in accepted_mail.attachments]
+        self.assertTrue(any(name.startswith('Zespol_') for name in attachment_names))
+
+    def test_sprzedaz_lubeck_department_selectable_and_recipient(self):
+        sl_user = _make_user('sluser', 'SL', email='sl@example.com')
+        resp = self.client.get('/nowa/')
+        self.assertContains(resp, 'Sluser SL')
+
+        prod = FirstProduction.objects.create(
+            sap_zlecenie='2', product_name='Y', scope='full', person_sl=sl_user)
+        from .views import _production_team_recipients
+        self.assertIn('sl@example.com', _production_team_recipients(prod))
 
 
 class SapPrefillDedupeTests(TestCase):
@@ -920,3 +1047,80 @@ class ProductionEditLinkingTests(TestCase):
         self.packaging.save(update_fields=['linked_production'])
         resp = self.client.post(f'/{self.sensory.pk}/etap2/odwiaz/')
         self.assertRedirects(resp, f'/{self.sensory.pk}/etap2/sensoryczne/')
+
+
+class TeamPersonDropdownTests(TestCase):
+    """Listy wyboru zespołu/akceptującego mają pokazywać czytelne Imię
+    Nazwisko (nie login w formacie imie.nazwisko), a akceptującym może być
+    też osoba z działu CE, nie tylko SD."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.ce = _make_user('cerson', 'CE', email='ce.person@example.com')
+        self.ce.first_name, self.ce.last_name = 'Ce', 'Person'
+        self.ce.save()
+
+    def test_new_production_form_shows_full_names_not_usernames(self):
+        resp = self.client.get('/nowa/')
+        self.assertContains(resp, 'Sduser SD')
+        self.assertNotContains(resp, '>sduser<')
+
+    def test_acceptor_choices_include_ce_department(self):
+        resp = self.client.get('/nowa/')
+        self.assertContains(resp, '<option value="1">Ce Person</option>'.replace('1', str(self.ce.pk)))
+
+
+class ChecklistBeforeDepartmentLockTests(TestCase):
+    """Wiersze checklisty Etapu I są edytowalne tylko przez dział, który je
+    nadzoruje (kolumna "Nadzór") - inne wiersze są zaszarzone/zablokowane."""
+
+    def setUp(self):
+        self.qa = _make_user('qauser', 'QA')
+        self.sc = _make_user('scuser', 'SC')
+        self.admin = _make_user('adminuser', 'SD')
+        self.admin.is_staff = True
+        self.admin.save()
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full')
+
+    def test_qa_sees_own_row_enabled_and_other_row_disabled(self):
+        self.client.force_login(self.qa)
+        resp = self.client.get(f'/{self.prod.pk}/etap1/')
+        self.assertFalse(resp.context['form'].fields['bom_set_status'].disabled)
+        self.assertTrue(resp.context['form'].fields['order_updated_status'].disabled)
+
+    def test_qa_cannot_write_to_other_departments_row(self):
+        self.client.force_login(self.qa)
+        self.client.post(f'/{self.prod.pk}/etap1/', {
+            'packaging_line': '',
+            'bom_set_status': 'tak',
+            'order_updated_status': 'tak',
+        })
+        cb = self.prod.checklist_before
+        self.assertEqual(cb.bom_set_status, 'tak')
+        self.assertEqual(cb.order_updated_status, '')
+
+    def test_sc_can_write_own_row_qa_cannot_overwrite_it_later(self):
+        self.client.force_login(self.sc)
+        self.client.post(f'/{self.prod.pk}/etap1/', {
+            'packaging_line': '',
+            'order_updated_status': 'tak',
+        })
+        self.client.logout()
+        self.client.force_login(self.qa)
+        self.client.post(f'/{self.prod.pk}/etap1/', {
+            'packaging_line': '',
+            'order_updated_status': 'nie',
+            'bom_set_status': 'tak',
+        })
+        cb = self.prod.checklist_before
+        cb.refresh_from_db()
+        self.assertEqual(cb.order_updated_status, 'tak')
+        self.assertEqual(cb.bom_set_status, 'tak')
+
+    def test_staff_can_edit_every_row(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get(f'/{self.prod.pk}/etap1/')
+        self.assertFalse(resp.context['form'].fields['order_updated_status'].disabled)
+        self.assertFalse(resp.context['form'].fields['bom_set_status'].disabled)
