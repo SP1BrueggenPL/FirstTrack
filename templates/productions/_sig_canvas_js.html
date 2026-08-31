@@ -1,0 +1,46 @@
+document.querySelectorAll('.team-sig-canvas').forEach(function(canvas) {
+  const fieldName = canvas.dataset.field;
+  const hiddenInput = document.querySelector('input[name="' + fieldName + '"]');
+  const ctx = canvas.getContext('2d');
+  let drawing = false;
+
+  (function resize() {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = parseInt(canvas.style.height) * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.strokeStyle = '#661C31';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (hiddenInput && hiddenInput.value) {
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, rect.width, parseInt(canvas.style.height));
+      img.src = hiddenInput.value;
+    }
+  })();
+
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    if (e.touches) return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+  canvas.addEventListener('mousedown',  e => { drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
+  canvas.addEventListener('mousemove',  e => { if (!drawing) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); });
+  canvas.addEventListener('mouseup',    () => { drawing = false; if (hiddenInput) hiddenInput.value = canvas.toDataURL('image/png'); });
+  canvas.addEventListener('mouseleave', () => { drawing = false; });
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }, { passive: false });
+  canvas.addEventListener('touchmove',  e => { if (!drawing) return; e.preventDefault(); const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); }, { passive: false });
+  canvas.addEventListener('touchend',   () => { drawing = false; if (hiddenInput) hiddenInput.value = canvas.toDataURL('image/png'); });
+});
+
+document.querySelectorAll('.sig-clear-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    const fieldName = btn.dataset.field;
+    const canvas = document.querySelector('.team-sig-canvas[data-field="' + fieldName + '"]');
+    const hiddenInput = document.querySelector('input[name="' + fieldName + '"]');
+    if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    if (hiddenInput) hiddenInput.value = '';
+  });
+});

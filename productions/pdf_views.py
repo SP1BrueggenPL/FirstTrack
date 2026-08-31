@@ -46,16 +46,18 @@ def _render_pdf(template_name, context):
         ) from e
 
 
-TEAM_PHOTO_FIELDS = [
-    ('R&D', 'photo_rd', 'person_rd'),
-    ('SC',  'photo_sc', 'person_sc'),
-    ('QL',  'photo_ql', 'person_ql'),
-    ('QA',  'photo_qa', 'person_qa'),
-    ('SD',  'photo_sd', 'person_sd'),
-    ('PP',  'photo_pp', 'person_pp'),
-    ('CE',  'photo_ce', 'person_ce'),
-    ('PT',  'photo_te', 'person_te'),
-    ('Sprzedaż Lubeck', 'photo_sl', 'person_sl'),
+# 8 ról z odręcznym podpisem (canvas, base64 PNG już gotowy jako src
+# obrazka) - Sprzedaż Lubeck dokumentuje obecność zdjęciem, obsługiwana
+# osobno (_build_sl_photo/_build_sl_photo_attachment).
+SIGNATURE_FIELDS = [
+    ('R&D', 'sig_rd', 'person_rd'),
+    ('SC',  'sig_sc', 'person_sc'),
+    ('QL',  'sig_ql', 'person_ql'),
+    ('QA',  'sig_qa', 'person_qa'),
+    ('SD',  'sig_sd', 'person_sd'),
+    ('PP',  'sig_pp', 'person_pp'),
+    ('CE',  'sig_ce', 'person_ce'),
+    ('PT',  'sig_te', 'person_te'),
 ]
 
 
@@ -110,38 +112,39 @@ def _checklist_photo_attachments(ca):
     return [a for a in atts if a]
 
 
-def _build_team_photos(prod, ca):
-    """Zdjęcia obecnych członków zespołu jako (rola, imię i nazwisko,
-    data URI) - do wbudowania w PDF, tylko dla osób faktycznie przypisanych
-    do produkcji i tylko gdy zdjęcie zostało dodane."""
+def _build_team_signatures(prod, ca):
+    """Odręczne podpisy (canvas) obecnych członków zespołu jako (rola, imię
+    i nazwisko, base64 PNG gotowy jako src obrazka) - tylko dla osób
+    faktycznie przypisanych do produkcji i tylko gdy podpis został złożony."""
     if not ca:
         return []
-    photos = []
-    for role, photo_field, person_field in TEAM_PHOTO_FIELDS:
+    sigs = []
+    for role, sig_field, person_field in SIGNATURE_FIELDS:
         person = getattr(prod, person_field)
-        if not person:
-            continue
-        uri = _photo_data_uri(getattr(ca, photo_field, None))
-        if uri:
-            photos.append((role, person.get_full_name(), uri))
-    return photos
+        sig = getattr(ca, sig_field, '')
+        if person and sig:
+            sigs.append((role, person.get_full_name(), sig))
+    return sigs
 
 
-def _build_team_photo_attachments(prod, ca):
-    """To samo co _build_team_photos, ale jako (nazwa, bajty, mimetype) do
+def _build_sl_photo(prod, ca):
+    """Sprzedaż Lubeck dokumentuje obecność zdjęciem, nie podpisem - zwraca
+    (imię i nazwisko, data URI) albo None, gdy nie ma przypisanej osoby albo
+    zdjęcia."""
+    if not ca or not prod.person_sl:
+        return None
+    uri = _photo_data_uri(ca.photo_sl)
+    if not uri:
+        return None
+    return (prod.person_sl.get_full_name(), uri)
+
+
+def _build_sl_photo_attachment(prod, ca):
+    """To samo co _build_sl_photo, ale jako (nazwa, bajty, mimetype) do
     doczepienia do maila w oryginalnej rozdzielczości."""
-    if not ca:
-        return []
-    atts = []
-    for role, photo_field, person_field in TEAM_PHOTO_FIELDS:
-        person = getattr(prod, person_field)
-        if not person:
-            continue
-        att = _photo_attachment(getattr(ca, photo_field, None))
-        if att:
-            filename, data, mime = att
-            atts.append((f'{role}_{filename}', data, mime))
-    return atts
+    if not ca or not prod.person_sl:
+        return None
+    return _photo_attachment(ca.photo_sl)
 
 
 def _linked_checklist_data(prod):
@@ -161,21 +164,25 @@ def _linked_checklist_data(prod):
     sensory_ca   = getattr(sensory_prod, 'checklist_after', None)
     packaging_ca = getattr(packaging_prod, 'checklist_after', None)
 
-    team_photos = _build_team_photos(sensory_prod, sensory_ca)
-    team_photo_attachments = _build_team_photo_attachments(sensory_prod, sensory_ca)
+    team_signatures = _build_team_signatures(sensory_prod, sensory_ca)
+    sl_photo = _build_sl_photo(sensory_prod, sensory_ca)
+    sl_photo_attachment = _build_sl_photo_attachment(sensory_prod, sensory_ca)
     photo_uris = _checklist_photo_uris(sensory_ca)
     photo_attachments = _checklist_photo_attachments(sensory_ca)
     if packaging_prod.pk != sensory_prod.pk:
-        team_photos = team_photos + _build_team_photos(packaging_prod, packaging_ca)
-        team_photo_attachments = team_photo_attachments + _build_team_photo_attachments(packaging_prod, packaging_ca)
+        team_signatures = team_signatures + _build_team_signatures(packaging_prod, packaging_ca)
+        if not sl_photo:
+            sl_photo = _build_sl_photo(packaging_prod, packaging_ca)
+            sl_photo_attachment = _build_sl_photo_attachment(packaging_prod, packaging_ca)
         photo_uris = photo_uris + _checklist_photo_uris(packaging_ca)
         photo_attachments = photo_attachments + _checklist_photo_attachments(packaging_ca)
 
     return {
         'sensory': sensory_ca.sensory_params.all() if sensory_ca else [],
         'packaging': packaging_ca.packaging_items.all() if packaging_ca else [],
-        'team_photos': team_photos,
-        'team_photo_attachments': team_photo_attachments,
+        'team_signatures': team_signatures,
+        'sl_photo': sl_photo,
+        'sl_photo_attachment': sl_photo_attachment,
         'photo_uris': photo_uris,
         'photo_attachments': photo_attachments,
     }
@@ -234,7 +241,7 @@ def pdf_etap3(request, pk):
             cb = getattr(prod, 'checklist_before', None)
             pdf = _render_pdf('productions/pdf/etap3.html', {
                 'production': prod, 'cb': cb, 'ca': None,
-                'sensory': [], 'packaging': [], 'team_photos': [], 'photo_uris': [],
+                'sensory': [], 'packaging': [], 'team_signatures': [], 'sl_photo': None, 'photo_uris': [],
             })
     except PdfGenerationError as e:
         messages.error(request, str(e))

@@ -303,18 +303,17 @@ class ChecklistAfter(models.Model):
     final_acceptance   = models.BooleanField('Akceptacja SD', null=True)
     acceptance_date    = models.DateField('Data akceptacji', null=True, blank=True)
     acceptance_signature = models.TextField('Podpis SD', blank=True)
-    # Zdjęcie obecnego członka zespołu (zamiast odręcznego podpisu na
-    # ekranie) - dokumentuje obecność bez podpisu cyfrowego, a dodatkowo
-    # dołączane do maili procesowych (patrz _send_sensory_accepted_email /
-    # _send_release_email).
-    photo_rd = models.ImageField('Zdjęcie R&D', upload_to='team_photos/', blank=True, null=True)
-    photo_sc = models.ImageField('Zdjęcie SC',  upload_to='team_photos/', blank=True, null=True)
-    photo_ql = models.ImageField('Zdjęcie QL',  upload_to='team_photos/', blank=True, null=True)
-    photo_qa = models.ImageField('Zdjęcie QA',  upload_to='team_photos/', blank=True, null=True)
-    photo_sd = models.ImageField('Zdjęcie SD',  upload_to='team_photos/', blank=True, null=True)
-    photo_pp = models.ImageField('Zdjęcie PP',  upload_to='team_photos/', blank=True, null=True)
-    photo_ce = models.ImageField('Zdjęcie CE',  upload_to='team_photos/', blank=True, null=True)
-    photo_te = models.ImageField('Zdjęcie PT',  upload_to='team_photos/', blank=True, null=True)
+    # Odręczny podpis (canvas, base64 PNG) dla całego zespołu poza Sprzedażą
+    # Lubeck - ta jedna dokumentuje obecność zdjęciem (photo_sl niżej), bo
+    # pracuje zdalnie/nie jest fizycznie przy checkliście do podpisania.
+    sig_rd  = models.TextField('Podpis R&D',  blank=True)
+    sig_sc  = models.TextField('Podpis SC',   blank=True)
+    sig_ql  = models.TextField('Podpis QL',   blank=True)
+    sig_qa  = models.TextField('Podpis QA',   blank=True)
+    sig_sd  = models.TextField('Podpis SD',   blank=True)
+    sig_pp  = models.TextField('Podpis PP',   blank=True)
+    sig_ce  = models.TextField('Podpis CE',   blank=True)
+    sig_te  = models.TextField('Podpis PT',   blank=True)
     photo_sl = models.ImageField('Zdjęcie Sprzedaż Lubeck', upload_to='team_photos/', blank=True, null=True)
     photo_1 = models.ImageField(upload_to='production_photos/', blank=True, null=True)
     photo_2 = models.ImageField(upload_to='production_photos/', blank=True, null=True)
