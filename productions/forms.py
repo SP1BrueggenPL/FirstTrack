@@ -356,19 +356,23 @@ class ChecklistBeforeForm(forms.ModelForm):
 # Checklista Po
 # ──────────────────────────────────────────────────────────
 
-_TEAM_PHOTO_ATTRS = {'class': 'form-control form-control-sm', 'accept': 'image/*', 'capture': 'environment'}
-_TEAM_PHOTO_WIDGETS = {
-    'photo_rd': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
-    'photo_sc': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
-    'photo_ql': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
-    'photo_qa': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
-    'photo_sd': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
-    'photo_pp': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
-    'photo_ce': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
-    'photo_te': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
-    'photo_sl': forms.FileInput(attrs=_TEAM_PHOTO_ATTRS),
+_SIG_WIDGETS = {
+    'sig_rd':  forms.HiddenInput(),
+    'sig_sc':  forms.HiddenInput(),
+    'sig_ql':  forms.HiddenInput(),
+    'sig_qa':  forms.HiddenInput(),
+    'sig_sd':  forms.HiddenInput(),
+    'sig_pp':  forms.HiddenInput(),
+    'sig_ce':  forms.HiddenInput(),
+    'sig_te':  forms.HiddenInput(),
 }
-_TEAM_PHOTO_FIELD_NAMES = list(_TEAM_PHOTO_WIDGETS.keys())
+_SIG_FIELD_NAMES = list(_SIG_WIDGETS.keys())
+
+# Sprzedaż Lubeck dokumentuje obecność zdjęciem, nie odręcznym podpisem -
+# jedyna rola w zespole z osobnym polem pliku zamiast pola podpisu canvas.
+_SL_PHOTO_WIDGET = forms.FileInput(attrs={
+    'class': 'form-control form-control-sm', 'accept': 'image/*', 'capture': 'environment',
+})
 
 # Krok 1 – parametry sensoryczne
 class ChecklistAfterSensoryForm(forms.ModelForm):
@@ -389,10 +393,11 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
             'sample_start', 'sample_middle', 'sample_end',
             'comparison_benchmark', 'comparison_lab', 'comparison_reference',
             'yield_kg', 'yield_takty', 'uwagi',
-            *_TEAM_PHOTO_FIELD_NAMES,
+            *_SIG_FIELD_NAMES, 'photo_sl',
         ]
         widgets = {
-            **_TEAM_PHOTO_WIDGETS,
+            **_SIG_WIDGETS,
+            'photo_sl':       _SL_PHOTO_WIDGET,
             'yield_kg':       forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'kg/h'}),
             'yield_takty':    forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'takty'}),
             'uwagi':          forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 3}),
@@ -404,11 +409,12 @@ class ChecklistAfterPackagingForm(forms.ModelForm):
     class Meta:
         model = ChecklistAfter
         fields = [
-            *_TEAM_PHOTO_FIELD_NAMES,
+            *_SIG_FIELD_NAMES, 'photo_sl',
             'photo_1', 'photo_2', 'photo_3', 'photo_4', 'umk_count',
         ]
         widgets = {
-            **_TEAM_PHOTO_WIDGETS,
+            **_SIG_WIDGETS,
+            'photo_sl':  _SL_PHOTO_WIDGET,
             'umk_count': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Liczba UMK'}),
             'photo_1': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),
             'photo_2': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),

@@ -619,19 +619,25 @@ def _etap2_fully_done(prod):
 
 
 def _all_sig_fields(prod):
-    """Nazwa historyczna (dawniej podpisy) - teraz zwraca pola zdjęć
-    obecnych członków zespołu (patrz ChecklistAfter.photo_rd itd.)."""
+    """8 ról z odręcznym podpisem (canvas) - bez Sprzedaży Lubeck, która
+    dokumentuje obecność zdjęciem, nie podpisem (patrz _sl_photo_field)."""
     return [
-        ('R&D', 'photo_rd', prod.person_rd),
-        ('SC',  'photo_sc', prod.person_sc),
-        ('QL',  'photo_ql', prod.person_ql),
-        ('QA',  'photo_qa', prod.person_qa),
-        ('SD',  'photo_sd', prod.person_sd),
-        ('PP',  'photo_pp', prod.person_pp),
-        ('CE',  'photo_ce', prod.person_ce),
-        ('PT',  'photo_te', prod.person_te),
-        ('Sprzedaż Lubeck', 'photo_sl', prod.person_sl),
+        ('R&D', 'sig_rd', prod.person_rd),
+        ('SC',  'sig_sc', prod.person_sc),
+        ('QL',  'sig_ql', prod.person_ql),
+        ('QA',  'sig_qa', prod.person_qa),
+        ('SD',  'sig_sd', prod.person_sd),
+        ('PP',  'sig_pp', prod.person_pp),
+        ('CE',  'sig_ce', prod.person_ce),
+        ('PT',  'sig_te', prod.person_te),
     ]
+
+
+def _sl_photo_field(prod):
+    """Sprzedaż Lubeck - jedyna rola dokumentowana zdjęciem zamiast
+    odręcznego podpisu. Zwraca (rola, nazwa_pola, osoba) tak jak
+    _all_sig_fields, żeby dało się użyć tego samego wzorca w widokach."""
+    return ('Sprzedaż Lubeck', 'photo_sl', prod.person_sl)
 
 
 # Etap II krok 1 – sensoryczne
@@ -688,7 +694,8 @@ def checklist_after_sensory(request, pk):
         'sensory_fs': sensory_fs,
         'production': prod,
         'checklist': instance,
-        'team_photo_fields': _all_sig_fields(prod),
+        'team_sig_fields': _all_sig_fields(prod),
+        'sl_field': _sl_photo_field(prod),
         'link_form': link_form,
         'step': 1,
     })
@@ -811,6 +818,8 @@ def checklist_after_packaging(request, pk):
     all_sigs = _all_sig_fields(prod)
     unsigned = [(role, fname, person) for role, fname, person in all_sigs
                 if person and not getattr(instance, fname)]
+    sl_role, sl_fname, sl_person = _sl_photo_field(prod)
+    sl_needs_photo = bool(sl_person and not getattr(instance, sl_fname))
 
     if request.method == 'POST':
         next_url = request.POST.get('next', '')
@@ -846,6 +855,9 @@ def checklist_after_packaging(request, pk):
         'production': prod,
         'checklist': instance,
         'unsigned_sig_fields': unsigned,
+        'sl_needs_photo': sl_needs_photo,
+        'sl_role': sl_role,
+        'sl_person': sl_person,
         'linked_sensory': linked_sensory,
         'step': 2,
         'next_url': next_url,
@@ -951,12 +963,17 @@ def release_production(request, pk):
     for role, fname, person in _all_sig_fields(prod):
         if person and getattr(ca, fname):
             signed.append((role, fname, person, getattr(ca, fname)))
+    sl_role, sl_fname, sl_person = _sl_photo_field(prod)
+    sl_photo = getattr(ca, sl_fname) if sl_person and getattr(ca, sl_fname) else None
 
     return render(request, 'productions/checklist_after_acceptance.html', {
         'form': form,
         'production': prod,
         'checklist': instance,
         'signed_team': signed,
+        'sl_role': sl_role,
+        'sl_person': sl_person,
+        'sl_photo': sl_photo,
         'step': 3,
     })
 
@@ -1207,7 +1224,7 @@ def _send_sensory_accepted_email(prod, ca):
         for role, fname, person in _all_sig_fields(prod)
         if person and getattr(ca, fname)
     ]
-    signed_lines = [f'  {role}: {name}' for role, name in signed] or ['  (brak zdjęć zespołu)']
+    signed_lines = [f'  {role}: {name}' for role, name in signed] or ['  (brak podpisów)']
     subject = f'[FirstTrack] Sensoryka zaakceptowana – {prod.product_name}'
     body = '\n'.join([
         f'Parametry sensoryczne dla produkcji „{prod.product_name}" zostały zaakceptowane.',
@@ -1222,9 +1239,11 @@ def _send_sensory_accepted_email(prod, ca):
     ])
     email = EmailMessage(subject=subject, body=body,
                          from_email=settings.DEFAULT_FROM_EMAIL, to=recipients)
-    from .pdf_views import _build_team_photo_attachments
-    for filename, data, mime in _build_team_photo_attachments(prod, ca):
-        email.attach(f'Zespol_{filename}', data, mime)
+    from .pdf_views import _build_sl_photo_attachment
+    sl_attachment = _build_sl_photo_attachment(prod, ca)
+    if sl_attachment:
+        filename, data, mime = sl_attachment
+        email.attach(f'Sprzedaz_Lubeck_{filename}', data, mime)
     _send_and_log(prod, subject, body, recipients, email_message=email)
 
 
@@ -1236,7 +1255,7 @@ def _packaging_accepted_lines(prod, ca):
         for role, fname, person in _all_sig_fields(prod)
         if person and getattr(ca, fname)
     ]
-    signed_lines = [f'  {role}: {name}' for role, name in signed] or ['  (brak zdjęć zespołu)']
+    signed_lines = [f'  {role}: {name}' for role, name in signed] or ['  (brak podpisów)']
     return [
         f'Etap II (pakowanie) dla produkcji „{prod.product_name}" został zaakceptowany.',
         'Zespół, który zaakceptował pakowanie:',
@@ -1266,7 +1285,7 @@ def _send_release_email(prod, ca):
         '',
         f'Liczba UMK do śluzy: {ca.umk_count or "–"}',
         '',
-        'W załączniku: checklista końcowa (PDF), zdjęcia z akceptacji oraz zdjęcia zespołu.',
+        'W załączniku: checklista końcowa (PDF), zdjęcia z akceptacji oraz zdjęcie od Sprzedaży Lubeck.',
         '',
         '-- FirstTrack, H. & J. Brüggen KG --',
     ]
@@ -1290,8 +1309,9 @@ def _send_release_email(prod, ca):
     linked_data = _linked_checklist_data(prod)
     for i, (filename, data, mime) in enumerate(linked_data['photo_attachments'], start=1):
         email.attach(f'Zdjecie_{i}_{filename}', data, mime)
-    for filename, data, mime in linked_data['team_photo_attachments']:
-        email.attach(f'Zespol_{filename}', data, mime)
+    if linked_data['sl_photo_attachment']:
+        filename, data, mime = linked_data['sl_photo_attachment']
+        email.attach(f'Sprzedaz_Lubeck_{filename}', data, mime)
 
     _send_and_log(prod, subject, body, recipients, email_message=email)
 

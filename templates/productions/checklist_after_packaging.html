@@ -116,25 +116,42 @@
     </div>
   </div>
 
-  <!-- Zdjęcia – tylko osoby, których zdjęcia jeszcze nie dodano -->
+  <!-- Podpisy – tylko osoby które jeszcze się nie podpisały -->
   <div class="card mb-3">
-    <div class="card-header"><i class="bi bi-camera me-2"></i>Zdjęcia – osoby, których zdjęcia jeszcze nie dodano</div>
+    <div class="card-header"><i class="bi bi-pen me-2"></i>Podpisy – osoby które jeszcze się nie podpisały</div>
     <div class="card-body">
+      {{ form.sig_rd }}{{ form.sig_sc }}{{ form.sig_ql }}{{ form.sig_qa }}
+      {{ form.sig_sd }}{{ form.sig_pp }}{{ form.sig_ce }}{{ form.sig_te }}
       {% if unsigned_sig_fields %}
       <div class="row g-3">
         {% for role, field_name, person in unsigned_sig_fields %}
         <div class="col-md-4 col-lg-3">
           <div class="small fw-semibold mb-1">{{ role }} – {{ person.get_full_name }}</div>
-          <input type="file" name="{{ field_name }}" accept="image/*" capture="environment"
-                 class="form-control form-control-sm">
+          <div class="border rounded bg-white" style="touch-action:none; cursor:crosshair;">
+            <canvas class="team-sig-canvas" data-field="{{ field_name }}" style="width:100%; height:110px; display:block;"></canvas>
+          </div>
+          <button type="button" class="btn btn-outline-secondary btn-sm mt-1 sig-clear-btn" data-field="{{ field_name }}">
+            <i class="bi bi-eraser me-1"></i>Wyczyść
+          </button>
         </div>
         {% endfor %}
       </div>
       {% else %}
-      <p class="text-success small mb-0"><i class="bi bi-check-circle me-1"></i>Zdjęcia wszystkich członków zespołu już dodano.</p>
+      <p class="text-success small mb-0"><i class="bi bi-check-circle me-1"></i>Wszyscy członkowie zespołu już się podpisali.</p>
       {% endif %}
     </div>
   </div>
+
+  <!-- Zdjęcie - Sprzedaż Lubeck (dokumentuje obecność zdjęciem, nie podpisem) -->
+  {% if sl_needs_photo %}
+  <div class="card mb-3">
+    <div class="card-header"><i class="bi bi-camera me-2"></i>Zdjęcie - {{ sl_role }}</div>
+    <div class="card-body">
+      <div class="small fw-semibold mb-1">{{ sl_person.get_full_name }}</div>
+      {{ form.photo_sl }}
+    </div>
+  </div>
+  {% endif %}
 
   <div class="d-flex gap-2">
     {% if not production.is_packaging_only %}
@@ -153,4 +170,10 @@
     </a>
   </div>
 </form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+{% include "productions/_sig_canvas_js.html" %}
+</script>
 {% endblock %}
