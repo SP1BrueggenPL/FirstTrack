@@ -498,6 +498,24 @@ class TeamPhotoTests(TestCase):
         ca.refresh_from_db()
         self.assertEqual(ca.sig_rd, 'data:image/png;base64,fakesignature')
 
+    def test_email_log_recipient_field_is_not_length_limited(self):
+        # Prawdziwa przyczyna błędu 500 przy w pełni obsadzonym zespole: przy
+        # produkcji z osobą przypisaną do każdej roli + stałą pulą adresów
+        # (management → adresy email) połączona lista adresatów
+        # (', '.join(recipients)) łatwo przekracza 200 znaków. Na Postgresie
+        # (produkcja) EmailLog.recipient jako CharField(max_length=200)
+        # rzucał StringDataRightTruncation - na SQLite (testy/lokalnie) długość
+        # nie jest egzekwowana, więc błąd nie było widać lokalnie. Pole musi
+        # być bez limitu (TextField), inaczej regresja przejdzie testy mimo
+        # błędu na produkcji.
+        field = EmailLog._meta.get_field('recipient')
+        self.assertIsNone(field.max_length)
+        long_recipient_list = ', '.join(f'osoba{i}@example.com' for i in range(20))
+        self.assertGreater(len(long_recipient_list), 200)
+        log = EmailLog.objects.create(recipient=long_recipient_list, subject='X', body='Y')
+        log.refresh_from_db()
+        self.assertEqual(log.recipient, long_recipient_list)
+
     def test_sprzedaz_lubeck_department_selectable_and_recipient(self):
         sl_user = _make_user('sluser2', 'SL', email='sl2@example.com')
         resp = self.client.get('/nowa/')

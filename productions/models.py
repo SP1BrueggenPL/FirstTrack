@@ -390,7 +390,11 @@ class PackagingItem(models.Model):
 class EmailLog(models.Model):
     production = models.ForeignKey(FirstProduction, on_delete=models.CASCADE, related_name='email_logs',
                                    null=True, blank=True)
-    recipient  = models.CharField(max_length=200)
+    # TextField, nie CharField - lista adresatów (join po przecinku) rośnie z
+    # liczbą przypisanych ról zespołu + stałej puli adresów, i przy w pełni
+    # obsadzonym zespole łatwo przekracza 200 znaków (StringDataRightTruncation
+    # na Postgresie, ale nie na SQLite - stąd błąd wychodził dopiero na Azure).
+    recipient  = models.TextField()
     subject    = models.CharField(max_length=300)
     body       = models.TextField()
     sent_at    = models.DateTimeField(auto_now_add=True)
