@@ -670,7 +670,7 @@ def checklist_after_sensory(request, pk):
             ca.save()
             sensory_fs.save()
             if 'next' in request.POST:
-                _send_sensory_accepted_email(prod, ca)
+                _notify_safely(_send_sensory_accepted_email, prod, ca)
                 if prod.is_sensory_only:
                     # Brak własnego etapu pakowania - sensoryka kończy Etap II
                     # tej produkcji (pakowanie realizuje powiązane zlecenie).
@@ -938,7 +938,7 @@ def release_production(request, pk):
                     'Produkcja skierowana do korekty - checklista wybranego etapu '
                     'została zresetowana, a zespół powiadomiony mailem.',
                 )
-                _send_correction_email(prod, ca)
+                _notify_safely(_send_correction_email, prod, ca)
             else:
                 ca.final_acceptance = True
                 ca.acceptance_date = ca.acceptance_date or timezone.localdate()
@@ -954,7 +954,7 @@ def release_production(request, pk):
                     linked.status = 'zwolniona'
                     linked.save(update_fields=['status'])
                 messages.success(request, f'Produkcja „{prod.product_name}" zwolniona do sprzedaży.')
-                _send_release_email(prod, ca)
+                _notify_safely(_send_release_email, prod, ca)
             return redirect('production_detail', pk=pk)
 
     # podpisy zespołu do podglądu
@@ -1180,6 +1180,23 @@ def _send_and_log(prod, subject, body, recipients, email_message=None):
         subject=subject, body=body, success=success, error_msg=error_msg,
     )
     return success
+
+
+def _notify_safely(send_fn, *args):
+    """Wysyłka maila procesowego (akceptacja sensoryki, korekta, zwolnienie)
+    nie może blokować zapisu checklisty - _send_and_log() sam w sobie już
+    nie rzuca wyjątków przy błędzie wysyłki, ale budowanie treści/załączników
+    maila (przed właściwym send()) już nie jest tak zabezpieczone. Bez tego
+    każdy nieoczekiwany błąd w tej fazie (np. chwilowy problem z odczytem
+    załącznika) kończył się błędem 500, mimo że dane checklisty i tak
+    zostały już poprawnie zapisane w bazie."""
+    try:
+        send_fn(*args)
+    except Exception:
+        logger.exception(
+            'Błąd przygotowania/wysyłki maila procesowego (%s) - checklista '
+            'została zapisana mimo to.', getattr(send_fn, '__name__', send_fn),
+        )
 
 
 def _send_due_production_reminders():

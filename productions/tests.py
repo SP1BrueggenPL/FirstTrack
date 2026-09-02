@@ -1,6 +1,7 @@
 import base64
 import json
 from datetime import date
+from unittest import mock
 
 from django.contrib.auth.models import User
 from django.core import mail
@@ -471,6 +472,31 @@ class TeamPhotoTests(TestCase):
         attachment_names = [a[0] for a in accepted_mail.attachments]
         self.assertTrue(any(name.startswith('Sprzedaz_Lubeck_') for name in attachment_names))
         self.assertEqual(len(attachment_names), 1)
+
+    def test_notification_failure_does_not_500_checklist_is_still_saved(self):
+        # Błąd przygotowania/wysyłki maila procesowego (np. chwilowy problem
+        # z załącznikiem albo dostawcą poczty) nie może zablokować zapisu
+        # checklisty - wcześniej _send_sensory_accepted_email() był wołany
+        # bez zabezpieczenia, więc każdy wyjątek w tej fazie kończył się
+        # błędem 500, mimo że dane były już poprawnie zapisane w bazie.
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.prod.refresh_from_db()
+        sensory_params = self.prod.checklist_after.sensory_params.all()
+        data = {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'sig_rd': 'data:image/png;base64,fakesignature',
+            'next': '1',
+        }
+        with mock.patch('productions.views._send_sensory_accepted_email',
+                         side_effect=RuntimeError('boom')):
+            resp = self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', data)
+        self.assertEqual(resp.status_code, 302)
+        ca = self.prod.checklist_after
+        ca.refresh_from_db()
+        self.assertEqual(ca.sig_rd, 'data:image/png;base64,fakesignature')
 
     def test_sprzedaz_lubeck_department_selectable_and_recipient(self):
         sl_user = _make_user('sluser2', 'SL', email='sl2@example.com')
