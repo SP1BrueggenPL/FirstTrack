@@ -172,7 +172,7 @@
     <td class="check">{% if cb and cb.additional_samples_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
     <td class="check">{% if cb and cb.additional_samples_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
     <td class="check">{% if cb and cb.additional_samples_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
-    <td class="uwagi">Ilość: {% if cb %}{{ cb.additional_samples_count|default:"" }}{% endif %}</td>
+    <td class="uwagi">Ilość: {% if cb %}{{ cb.additional_samples_count|default:"" }}{% endif %}{% if cb and cb.additional_samples_uwagi %} · {{ cb.additional_samples_uwagi }}{% endif %}</td>
     <td class="nadzor">SD</td>
   </tr>
 </table>
@@ -215,13 +215,15 @@
   </tr>
   <tr>
     <td class="label">R&amp;D:</td><td>{% if cb %}{{ cb.confirm_rd|default:"" }}{% endif %}</td>
-    <td class="label">PP:</td><td>{% if cb %}{{ cb.confirm_pp|default:"" }}{% endif %}</td>
-    <td class="label">CE:</td><td>{% if cb %}{{ cb.confirm_ce|default:"" }}{% endif %}</td>
+    <td class="label">SD:</td><td>{% if cb %}{{ cb.confirm_sd|default:"" }}{% endif %}</td>
+    <td class="label">SC:</td><td>{% if cb %}{{ cb.confirm_sc|default:"" }}{% endif %}</td>
     <td class="label">QA:</td><td>{% if cb %}{{ cb.confirm_qa|default:"" }}{% endif %}</td>
   </tr>
   <tr>
-    <td class="label">SD:</td><td>{% if cb %}{{ cb.confirm_sd|default:"" }}{% endif %}</td>
-    <td colspan="6"></td>
+    <td class="label">QL:</td><td>{% if cb %}{{ cb.confirm_ql|default:"" }}{% endif %}</td>
+    <td class="label">PT:</td><td>{% if cb %}{{ cb.confirm_te|default:"" }}{% endif %}</td>
+    <td class="label">PP:</td><td>{% if cb %}{{ cb.confirm_pp|default:"" }}{% endif %}</td>
+    <td colspan="2"></td>
   </tr>
 </table>
 

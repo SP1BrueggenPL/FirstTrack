@@ -1,10 +1,10 @@
 {% extends "productions/base.html" %}
-{% block title %}Etap III – {{ production.product_name }}{% endblock %}
+{% block title %}Etap IV – {{ production.product_name }}{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
-    <h4 class="mb-0"><i class="bi bi-patch-check me-2"></i>Etap III – Akceptacja SD &amp; Zwolnienie do sprzedaży</h4>
+    <h4 class="mb-0"><i class="bi bi-patch-check me-2"></i>Etap IV – Akceptacja SD &amp; Zwolnienie do sprzedaży</h4>
     <small class="text-muted">{{ production.product_name }}</small>
   </div>
   <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary btn-sm">
@@ -33,7 +33,10 @@
         <div class="col-md-4">
           <label class="fw-semibold small d-block">Liczba UMK do śluzy</label>
           <span class="fw-semibold">{{ checklist.umk_count|default:"–" }}</span>
-          <div class="form-text small">Pochodzi z Etapu I („Wymagane dodatkowe próbki dla klienta?").</div>
+          <div class="form-text small">Pochodzi z Etapu II („Wymagane dodatkowe próbki dla klienta?").</div>
+          {% if checklist.umk_uwagi %}
+          <div class="small mt-1"><span class="text-muted">Uwagi:</span> {{ checklist.umk_uwagi }}</div>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -90,7 +93,7 @@
   <!-- Podgląd podpisów zespołu -->
   {% if signed_team or sl_photo %}
   <div class="card mb-3">
-    <div class="card-header"><i class="bi bi-people me-2"></i>Podpisy zespołu z Etapu II</div>
+    <div class="card-header"><i class="bi bi-people me-2"></i>Podpisy zespołu z Etapu III</div>
     <div class="card-body">
       <div class="row g-2">
         {% for role, fname, person, sig_data in signed_team %}
@@ -118,14 +121,14 @@
 
   <div class="d-flex gap-2">
     <a href="{% url 'checklist_after_packaging' production.pk %}" class="btn btn-outline-secondary">
-      <i class="bi bi-arrow-left me-1"></i>Wstecz do Etapu II
+      <i class="bi bi-arrow-left me-1"></i>Wstecz do Etapu III
     </a>
     <button type="submit" name="save" class="btn btn-primary" id="decision-submit-btn"
             onclick="return confirm(window.decisionConfirmMessage ? window.decisionConfirmMessage() : true)">
       <i class="bi bi-floppy me-1"></i>Zapisz
     </button>
     <a href="{% url 'pdf_etap3' production.pk %}" class="btn btn-outline-dark ms-auto" target="_blank">
-      <i class="bi bi-file-earmark-pdf me-1"></i>Pobierz PDF Etap III
+      <i class="bi bi-file-earmark-pdf me-1"></i>Pobierz PDF Etap IV
     </a>
   </div>
 </form>

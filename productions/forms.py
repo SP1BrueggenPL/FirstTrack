@@ -184,6 +184,16 @@ def _person_field(dept_code, label, empty_label='– wybierz –'):
     return f
 
 
+# "Szczegółowe informacje"/"Numery" - pola edytowalne tylko przez dział
+# nadzorujący (poza "komentarz", edytowalny przez każdego). Ten sam wzorzec
+# blokowania (disabled=True) co CHECKLIST_BEFORE_ROW_FIELDS w views.py.
+PRODUCTION_FIELD_DEPT_LOCKS = [
+    (['scope'], ['SC']),
+    (['data_produkcji', 'zmiany', 'layout', 'typ_produkcji', 'fert_number'], ['SD']),
+    (['rd_number', 'recipe', 'crm_project_nr'], ['RD']),
+]
+
+
 class FirstProductionForm(forms.ModelForm):
     data_produkcji = forms.DateField(
         required=False,
@@ -194,12 +204,14 @@ class FirstProductionForm(forms.ModelForm):
 
     class Meta:
         model = FirstProduction
+        # Zespół (person_rd..person_sl) nie jest już wybierany tutaj - patrz
+        # SENSORY_TEAM_FIELD_DEPTS/PACKAGING_TEAM_FIELD_DEPTS - wybierany jest
+        # bezpośrednio na checkliście sensoryki/pakowania (Etap III), przez
+        # dział, którego dotyczy dana rola.
         fields = [
             'sap_zlecenie', 'sap_material', 'product_name',
             'scope', 'data_produkcji', 'zmiany', 'layout', 'typ_produkcji', 'komentarz',
             'fert_number', 'rd_number', 'recipe', 'crm_project_nr',
-            'person_rd', 'person_sc', 'person_ql', 'person_qa',
-            'person_sd', 'person_pp', 'person_ce', 'person_te', 'person_sl',
             'acceptor',
         ]
         widgets = {
@@ -216,36 +228,12 @@ class FirstProductionForm(forms.ModelForm):
             'rd_number':      _fc(),
             'recipe':         _fc(),
             'crm_project_nr': _fc(),
-            'person_rd':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
-            'person_sc':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
-            'person_ql':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
-            'person_qa':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
-            'person_sd':      forms.Select(attrs={'class': 'form-select form-select-sm person-select', 'id': 'id_person_sd'}),
-            'person_pp':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
-            'person_ce':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
-            'person_te':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
-            'person_sl':      forms.Select(attrs={'class': 'form-select form-select-sm person-select'}),
             'acceptor':       forms.Select(attrs={'class': 'form-select', 'id': 'id_acceptor'}),
         }
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = user
-        # Ogranicz listy do właściwych działów
-        depts = {
-            'person_rd': 'RD', 'person_sc': 'SC', 'person_ql': 'QL',
-            'person_qa': 'QA', 'person_sd': 'SD', 'person_pp': 'PP',
-            'person_ce': 'CE', 'person_te': 'TE', 'person_sl': 'SL',
-        }
-        for field_name, dept in depts.items():
-            self.fields[field_name].queryset = (
-                User.objects.filter(profile__department=dept)
-                            .select_related('profile')
-                            .order_by('last_name', 'first_name')
-            )
-            self.fields[field_name].empty_label = '– wybierz –'
-            self.fields[field_name].required = False
-
         self.fields['acceptor'].queryset = (
             User.objects.filter(profile__department__in=['SD', 'CE'])
                         .select_related('profile')
@@ -253,13 +241,31 @@ class FirstProductionForm(forms.ModelForm):
         )
         self.fields['acceptor'].empty_label = '– wybierz akceptującego –'
         self.fields['acceptor'].required = False
-        _use_full_name_labels(self, *depts.keys(), 'acceptor')
+        _use_full_name_labels(self, 'acceptor')
         # Żadne z pól "Szczegółowe informacje"/"Numery" (poza krótkim tekstem
         # materiału) nie jest wymagane - niezależnie od działu osoby
         # wypełniającej formularz, można zapisać produkcję z niekompletnymi
         # danymi i uzupełnić je później.
         for field_name in ('fert_number', 'recipe'):
             self.fields[field_name].required = False
+
+        # disabled=True (nie tylko ukrycie w szablonie) - Django ignoruje
+        # przesłaną wartość i przy zapisie zachowuje dotychczasową (patrz
+        # BaseForm._clean_fields), więc ograniczenie działa nawet gdyby ktoś
+        # ręcznie odblokował pole w przeglądarce. Administratorzy (is_staff)
+        # i wywołania bez podanego usera (np. import) nie są ograniczane.
+        if self.user is not None and not self.user.is_staff:
+            dept = getattr(getattr(self.user, 'profile', None), 'department', '') or ''
+            for field_names, allowed_depts in PRODUCTION_FIELD_DEPT_LOCKS:
+                if dept in allowed_depts:
+                    continue
+                for field_name in field_names:
+                    self.fields[field_name].disabled = True
+            # Osoba zwalniająca (akceptor) jest wybierana tylko przez SD/CE -
+            # to oni tworzą tę listę wyboru (queryset już ograniczony do
+            # SD/CE), więc pole jest zablokowane dla każdego innego działu.
+            if dept not in ('SD', 'CE'):
+                self.fields['acceptor'].disabled = True
 
     def _user_label(self, user):
         return user.get_full_name() or user.username
@@ -309,7 +315,13 @@ class ChecklistBeforeForm(forms.ModelForm):
     class Meta:
         model = ChecklistBefore
         fields = '__all__'
-        exclude = ['production', 'completed_at', 'created_at', 'updated_at']
+        # confirm_* nie są edytowalne przez formularz - zapisywane serwerowo
+        # (patrz _stamp_checklist_before_confirmation w views.py) na podstawie
+        # zalogowanego użytkownika, żeby nie dało się wpisać cudzego imienia.
+        exclude = [
+            'production', 'completed_at', 'created_at', 'updated_at',
+            'confirm_rd', 'confirm_sd', 'confirm_sc', 'confirm_qa', 'confirm_ql', 'confirm_te', 'confirm_pp',
+        ]
         widgets = {
             'order_updated_status':    forms.RadioSelect(attrs={'class': 'status-radio'}),
             'pwpr_status':             forms.RadioSelect(attrs={'class': 'status-radio'}),
@@ -338,17 +350,13 @@ class ChecklistBeforeForm(forms.ModelForm):
             'planned_yield_kg':        forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'kg/h'}),
             'planned_yield_takty':     forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'takty'}),
             'additional_samples_count': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Ilość'}),
+            'additional_samples_uwagi': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Uwagi'}),
             'test_packaging_1_name':   forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nazwa pozycji'}),
             'test_packaging_1_nadzor': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nadzór'}),
             'test_packaging_2_name':   forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nazwa pozycji'}),
             'test_packaging_2_nadzor': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nadzór'}),
             'test_packaging_3_name':   forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nazwa pozycji'}),
             'test_packaging_3_nadzor': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nadzór'}),
-            'confirm_rd':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
-            'confirm_pp':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
-            'confirm_ce':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
-            'confirm_qa':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
-            'confirm_sd':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
         }
 
 
@@ -374,6 +382,39 @@ _SL_PHOTO_WIDGET = forms.FileInput(attrs={
     'class': 'form-control form-control-sm', 'accept': 'image/*', 'capture': 'environment',
 })
 
+# Zespół nie jest już wybierany przy edycji produkcji - każdy etap ma inny
+# zestaw ról do wyboru, uzupełniany bezpośrednio na jego checkliście przez
+# osobę z odpowiedniego działu (patrz _stamp_...odpowiednie pola w views.py
+# oraz _lock_team_fields_to_department poniżej). Pola person_* na tych
+# formularzach NIE są polami modelu ChecklistAfter (żyją na FirstProduction)
+# - są tu tylko do wyboru, a widok ręcznie przenosi je na produkcję (patrz
+# checklist_after_sensory/checklist_after_packaging w views.py), tak jak już
+# działa 'packaging_line' na ChecklistBeforeForm.
+SENSORY_TEAM_FIELD_DEPTS = {
+    'person_sd': 'SD', 'person_qa': 'QA', 'person_rd': 'RD',
+    'person_te': 'TE', 'person_ce': 'CE',
+}
+PACKAGING_TEAM_FIELD_DEPTS = {
+    'person_sd': 'SD', 'person_pp': 'PP', 'person_qa': 'QA',
+    'person_ql': 'QL', 'person_ce': 'CE',
+}
+
+
+def _lock_team_fields_to_department(form, user, field_depts):
+    """Każda rola w zespole jest wybierana tylko przez osobę z tego samego
+    działu (np. RD nie może wybrać osoby SD) - poza Sprzedażą Lubeck, którą
+    wybiera dział SD (SL pracuje zdalnie, nie loguje się do checklisty).
+    Administratorzy (is_staff) mogą edytować wszystko."""
+    if user is None or user.is_staff:
+        return
+    dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
+    for field_name, allowed_dept in field_depts.items():
+        if dept != allowed_dept:
+            form.fields[field_name].disabled = True
+    if 'person_sl' in form.fields and dept != 'SD':
+        form.fields['person_sl'].disabled = True
+
+
 # Krok 1 – parametry sensoryczne
 class ChecklistAfterSensoryForm(forms.ModelForm):
     production_date = forms.DateField(
@@ -382,6 +423,21 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
         widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date', 'class': 'form-control form-control-sm'}),
         label='Data produkcji',
     )
+    person_sd = _person_field('SD', 'SD')
+    person_qa = _person_field('QA', 'QA')
+    person_rd = _person_field('RD', 'R&D')
+    person_te = _person_field('TE', 'PT')
+    person_ce = _person_field('CE', 'CE')
+    person_sl = _person_field('SL', 'Sprzedaż Lubeck')
+
+    def __init__(self, *args, production=None, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        team_fields = ('person_sd', 'person_qa', 'person_rd', 'person_te', 'person_ce', 'person_sl')
+        if production is not None:
+            for field_name in team_fields:
+                self.initial[field_name] = getattr(production, field_name)
+        _use_full_name_labels(self, *team_fields)
+        _lock_team_fields_to_department(self, user, SENSORY_TEAM_FIELD_DEPTS)
 
     class Meta:
         model = ChecklistAfter
@@ -392,7 +448,7 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
             'production_date',
             'sample_start', 'sample_middle', 'sample_end',
             'comparison_benchmark', 'comparison_lab', 'comparison_reference',
-            'yield_kg', 'yield_takty', 'uwagi',
+            'yield_kg', 'yield_takty', 'lab_samples_delivered', 'uwagi',
             *_SIG_FIELD_NAMES, 'photo_sl',
         ]
         widgets = {
@@ -400,12 +456,37 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
             'photo_sl':       _SL_PHOTO_WIDGET,
             'yield_kg':       forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'kg/h'}),
             'yield_takty':    forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'takty'}),
+            'lab_samples_delivered': forms.RadioSelect(attrs={'class': 'status-radio'}),
             'uwagi':          forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 3}),
         }
 
 
 # Krok 2 – pakowanie
 class ChecklistAfterPackagingForm(forms.ModelForm):
+    person_sd = _person_field('SD', 'SD')
+    person_pp = _person_field('PP', 'PP')
+    person_qa = _person_field('QA', 'QA')
+    person_ql = _person_field('QL', 'QL')
+    person_ce = _person_field('CE', 'CE')
+    person_sl = _person_field('SL', 'Sprzedaż Lubeck')
+
+    def __init__(self, *args, production=None, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        team_fields = ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce', 'person_sl')
+        if production is not None:
+            # SD/QA/CE są zwykle już wybrane w sensoryce - dla powiązanej pary
+            # sensoryka/pakowanie to osobne wiersze FirstProduction, więc bez
+            # tego automatycznego przeniesienia pakowanie musiałoby wybierać je
+            # jeszcze raz. Wynik jest tylko podpowiedzią - nadal można zmienić.
+            source = production
+            if not any(getattr(production, f) for f in ('person_sd', 'person_qa', 'person_ce')) and production.linked_production:
+                source = production.linked_production
+            for field_name in team_fields:
+                value = getattr(production, field_name) or getattr(source, field_name)
+                self.initial[field_name] = value
+        _use_full_name_labels(self, *team_fields)
+        _lock_team_fields_to_department(self, user, PACKAGING_TEAM_FIELD_DEPTS)
+
     class Meta:
         model = ChecklistAfter
         fields = [

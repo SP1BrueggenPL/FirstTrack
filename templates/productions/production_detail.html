@@ -42,16 +42,16 @@
 <!-- Pasek etapów -->
 <div class="step-indicator mb-4">
   <div class="step {% if production.status == 'nowa' %}active{% elif production.status != 'nowa' %}done{% endif %}">
-    <i class="bi bi-1-circle me-1"></i>Dane
+    <i class="bi bi-1-circle me-1"></i>Etap I - Dane SAP
   </div>
   <div class="step {% if production.status == 'etap1' %}active{% elif production.status in 'etap2,etap3,zwolniona' %}done{% endif %}">
-    <i class="bi bi-2-circle me-1"></i>Etap I
+    <i class="bi bi-2-circle me-1"></i>Etap II
   </div>
   <div class="step {% if production.status == 'etap2' %}active{% elif production.status in 'etap3,zwolniona' %}done{% endif %}">
-    <i class="bi bi-3-circle me-1"></i>Etap II
+    <i class="bi bi-3-circle me-1"></i>Etap III
   </div>
   <div class="step {% if production.status == 'etap3' %}active{% elif production.status == 'zwolniona' %}done{% endif %}">
-    <i class="bi bi-4-circle me-1"></i>Etap III
+    <i class="bi bi-4-circle me-1"></i>Etap IV
   </div>
   <div class="step {% if production.status == 'zwolniona' %}done{% endif %}">
     <i class="bi bi-check-circle me-1"></i>Zwolniona
@@ -64,7 +64,7 @@
   <div class="col-md-4 d-flex flex-column">
 
     <div class="card mb-3">
-      <div class="card-header"><i class="bi bi-upc-scan me-2"></i>Dane SAP</div>
+      <div class="card-header"><i class="bi bi-upc-scan me-2"></i>Etap I - Dane SAP</div>
       <div class="card-body p-0">
         <table class="table table-sm table-borderless mb-0 small">
           <tr><td class="text-muted ps-3" style="width:110px">Zlecenie</td><td class="fw-semibold">{{ production.sap_zlecenie|default:"–" }}</td></tr>
@@ -171,10 +171,10 @@
   <!-- Prawa kolumna: 3 etapy równej wysokości -->
   <div class="col-md-8 d-flex flex-column" style="gap: 1rem;">
 
-    <!-- Etap I -->
+    <!-- Etap II -->
     <div class="card" style="flex:1">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-clipboard-check me-2"></i>Etap I – Checklista przed produkcją</span>
+        <span><i class="bi bi-clipboard-check me-2"></i>Etap II – Checklista przed produkcją</span>
         {% if checklist_before %}
           {% if checklist_before.completed_at %}<span class="badge bg-success">Ukończony {{ checklist_before.completed_at|date:"d.m.Y" }}</span>
           {% else %}<span class="badge bg-warning text-dark">W trakcie</span>{% endif %}
@@ -227,10 +227,10 @@
       </div>
     </div>
 
-    <!-- Etap II -->
+    <!-- Etap III -->
     <div class="card" style="flex:1">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-clipboard2-pulse me-2"></i>Etap II – Checklista po produkcji</span>
+        <span><i class="bi bi-clipboard2-pulse me-2"></i>Etap III – Checklista po produkcji</span>
         {% if checklist_after %}
           {% if checklist_after.completed_at %}<span class="badge bg-success">Ukończony {{ checklist_after.completed_at|date:"d.m.Y" }}</span>
           {% else %}<span class="badge bg-warning text-dark">W trakcie</span>{% endif %}
@@ -281,10 +281,10 @@
       </div>
     </div>
 
-    <!-- Etap III -->
+    <!-- Etap IV -->
     <div class="card" style="flex:1">
       <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-patch-check me-2"></i>Etap III – Zwolnienie do sprzedaży</span>
+        <span><i class="bi bi-patch-check me-2"></i>Etap IV – Zwolnienie do sprzedaży</span>
         {% if gallery_photos %}
         <a href="#galeria-zdjec" class="btn btn-outline-light btn-sm">
           <i class="bi bi-images me-1"></i>Zdjęcia ({{ gallery_photos|length }})
@@ -304,10 +304,10 @@
             </div>
             {% endif %}
             <a href="{% url 'pdf_etap3' production.pk %}" class="btn btn-outline-secondary btn-sm" target="_blank">
-              <i class="bi bi-file-earmark-pdf me-1"></i>Pobierz PDF Etap III
+              <i class="bi bi-file-earmark-pdf me-1"></i>Pobierz PDF Etap IV
             </a>
           {% elif etap2_ready %}
-            <p class="text-muted small mb-3">Etap II zatwierdzony. Wypełnij akceptację SD i zwolnij produkcję.</p>
+            <p class="text-muted small mb-3">Etap III zatwierdzony. Wypełnij akceptację SD i zwolnij produkcję.</p>
             <div class="d-flex gap-2 flex-wrap">
               <a href="{% url 'release_production' production.pk %}" class="btn btn-success btn-sm">
                 <i class="bi bi-patch-check me-1"></i>Akceptacja SD &amp; Zwolnienie
@@ -318,13 +318,13 @@
             </div>
           {% elif checklist_after and checklist_after.completed_at and production.linked_production %}
             <div class="alert alert-secondary py-2 small mb-0">
-              <i class="bi bi-lock me-1"></i>Ta strona ma ukończony Etap II - czeka na ukończenie checklisty
+              <i class="bi bi-lock me-1"></i>Ta strona ma ukończony Etap III - czeka na ukończenie checklisty
               powiązanego zlecenia
               <a href="{% url 'production_detail' production.linked_production.pk %}">{{ production.linked_production.product_name }}</a>.
             </div>
           {% else %}
             <div class="alert alert-secondary py-2 small mb-0">
-              <i class="bi bi-lock me-1"></i>Dostępne po zatwierdzeniu Etapu II.
+              <i class="bi bi-lock me-1"></i>Dostępne po zatwierdzeniu Etapu III.
             </div>
           {% endif %}
         </div>

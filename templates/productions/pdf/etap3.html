@@ -223,13 +223,15 @@
   </tr>
   <tr>
     <td class="label">R&amp;D:</td><td>{% if cb %}{{ cb.confirm_rd|default:"" }}{% endif %}</td>
-    <td class="label">PP:</td><td>{% if cb %}{{ cb.confirm_pp|default:"" }}{% endif %}</td>
-    <td class="label">CE:</td><td>{% if cb %}{{ cb.confirm_ce|default:"" }}{% endif %}</td>
+    <td class="label">SD:</td><td>{% if cb %}{{ cb.confirm_sd|default:"" }}{% endif %}</td>
+    <td class="label">SC:</td><td>{% if cb %}{{ cb.confirm_sc|default:"" }}{% endif %}</td>
     <td class="label">QA:</td><td>{% if cb %}{{ cb.confirm_qa|default:"" }}{% endif %}</td>
   </tr>
   <tr>
-    <td class="label">SD:</td><td>{% if cb %}{{ cb.confirm_sd|default:"" }}{% endif %}</td>
-    <td colspan="6"></td>
+    <td class="label">QL:</td><td>{% if cb %}{{ cb.confirm_ql|default:"" }}{% endif %}</td>
+    <td class="label">PT:</td><td>{% if cb %}{{ cb.confirm_te|default:"" }}{% endif %}</td>
+    <td class="label">PP:</td><td>{% if cb %}{{ cb.confirm_pp|default:"" }}{% endif %}</td>
+    <td colspan="2"></td>
   </tr>
 </table>
 
@@ -348,6 +350,10 @@
     <td class="label">Uzyskana wydajność</td>
     <td>kg/h: {% if ca %}{{ ca.yield_kg|default:"" }}{% endif %}</td>
     <td colspan="4">Takty: {% if ca %}{{ ca.yield_takty|default:"" }}{% endif %}</td>
+  </tr>
+  <tr>
+    <td class="label">Czy dostarczono próbki do laboratorium?</td>
+    <td colspan="5">{% if ca %}{{ ca.get_lab_samples_delivered_display|default:"" }}{% endif %}</td>
   </tr>
   <tr>
     <td class="label">Uwagi:</td>

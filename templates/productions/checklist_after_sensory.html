@@ -1,10 +1,10 @@
 {% extends "productions/base.html" %}
-{% block title %}Etap II Krok 1 – {{ production.product_name }}{% endblock %}
+{% block title %}Etap III Krok 1 – {{ production.product_name }}{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
-    <h4 class="mb-0"><i class="bi bi-eyedropper me-2"></i>Etap II – Parametry sensoryczne</h4>
+    <h4 class="mb-0"><i class="bi bi-eyedropper me-2"></i>Etap III – Parametry sensoryczne</h4>
     <small class="text-muted">
       {{ production.product_name }}
       {% if not production.is_sensory_only %}&nbsp;|&nbsp; Krok 1 z 2{% endif %}
@@ -76,6 +76,14 @@
   {% csrf_token %}
   {{ sensory_fs.management_form }}
 
+  {% if sensory_locked %}
+  <div class="alert alert-secondary py-2 small mb-3">
+    <i class="bi bi-lock me-1"></i>Sensoryka została już zaakceptowana i mail wysłany - checklista jest
+    zablokowana. Ponowną edycję odblokowuje wyłącznie skierowanie produkcji do korekty na tym etapie
+    w Etapie IV.
+  </div>
+  {% endif %}
+
   <!-- Dane nagłówkowe -->
   <div class="card mb-3">
     <div class="card-header"><i class="bi bi-info-circle me-2"></i>Dane produkcji</div>
@@ -84,7 +92,7 @@
         <div class="col-md-3">
           <label class="form-label fw-semibold small d-block">Linia pakująca</label>
           <span class="fw-semibold">{{ production.packaging_line|default:"–" }}</span>
-          <div class="form-text small">Pochodzi z Etapu I.</div>
+          <div class="form-text small">Pochodzi z Etapu II.</div>
         </div>
         <div class="col-md-3">
           <label class="form-label fw-semibold small">Data produkcji</label>
@@ -174,8 +182,47 @@
           {{ form.yield_takty }}
         </div>
         <div class="col-12">
+          <label class="fw-semibold small d-block">Czy dostarczono próbki do laboratorium?</label>
+          <div class="d-flex gap-3">
+            {% for radio in form.lab_samples_delivered %}
+            <div class="form-check form-check-inline">
+              {{ radio.tag }}
+              <label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="col-12">
           <label class="fw-semibold small">Uwagi</label>
           {{ form.uwagi }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Zespół - wybierany tutaj, każda rola tylko przez osobę z tego działu
+       (Sprzedaż Lubeck wybiera dział SD - pracuje zdalnie). -->
+  <div class="card mb-3">
+    <div class="card-header"><i class="bi bi-people me-2"></i>Zespół</div>
+    <div class="card-body">
+      <div class="row g-2">
+        <div class="col-md-4 col-lg-2">
+          <label class="form-label fw-semibold small">SD</label>{{ form.person_sd }}
+        </div>
+        <div class="col-md-4 col-lg-2">
+          <label class="form-label fw-semibold small">QA</label>{{ form.person_qa }}
+        </div>
+        <div class="col-md-4 col-lg-2">
+          <label class="form-label fw-semibold small">R&amp;D</label>{{ form.person_rd }}
+        </div>
+        <div class="col-md-4 col-lg-2">
+          <label class="form-label fw-semibold small">PT</label>{{ form.person_te }}
+        </div>
+        <div class="col-md-4 col-lg-2">
+          <label class="form-label fw-semibold small">CE</label>{{ form.person_ce }}
+        </div>
+        <div class="col-md-4 col-lg-2">
+          <label class="form-label fw-semibold small">Sprzedaż Lubeck</label>{{ form.person_sl }}
         </div>
       </div>
     </div>
@@ -210,20 +257,16 @@
   </div>
 
   <!-- Zdjęcie - Sprzedaż Lubeck (dokumentuje obecność zdjęciem, nie podpisem) -->
-  {% with sl_role=sl_field.0 sl_person=sl_field.2 %}
-  {% if sl_person %}
   <div class="card mb-3">
-    <div class="card-header"><i class="bi bi-camera me-2"></i>Zdjęcie - {{ sl_role }}</div>
+    <div class="card-header"><i class="bi bi-camera me-2"></i>Zdjęcie - Sprzedaż Lubeck</div>
     <div class="card-body">
-      <div class="small fw-semibold mb-1">{{ sl_person.get_full_name }}</div>
       {{ form.photo_sl }}
       {% if checklist.photo_sl %}<img src="{{ checklist.photo_sl.url }}" class="mt-1 rounded border" height="70">{% endif %}
     </div>
   </div>
-  {% endif %}
-  {% endwith %}
 
   <div class="d-flex gap-2">
+    {% if not sensory_locked %}
     <button type="submit" name="save" class="btn btn-outline-primary">
       <i class="bi bi-floppy me-1"></i>Zapisz roboczo
     </button>
@@ -234,6 +277,7 @@
         Dalej: Pakowanie <i class="bi bi-arrow-right ms-1"></i>
       {% endif %}
     </button>
+    {% endif %}
     <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary">Anuluj</a>
   </div>
 </form>

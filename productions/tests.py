@@ -464,6 +464,8 @@ class TeamPhotoTests(TestCase):
             'sensory-TOTAL_FORMS': str(sensory_params.count()),
             'sensory-INITIAL_FORMS': str(sensory_params.count()),
             **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'person_rd': str(self.rd.pk),
+            'person_sl': str(self.sl.pk),
             'sig_rd': 'data:image/png;base64,fakesignature',
             'photo_sl': photo,
             'next': '1',
@@ -498,9 +500,29 @@ class TeamPhotoTests(TestCase):
         ca.refresh_from_db()
         self.assertEqual(ca.sig_rd, 'data:image/png;base64,fakesignature')
 
+    def test_email_log_recipient_field_is_not_length_limited(self):
+        # Prawdziwa przyczyna błędu 500 przy w pełni obsadzonym zespole: przy
+        # produkcji z osobą przypisaną do każdej roli + stałą pulą adresów
+        # (management → adresy email) połączona lista adresatów
+        # (', '.join(recipients)) łatwo przekracza 200 znaków. Na Postgresie
+        # (produkcja) EmailLog.recipient jako CharField(max_length=200)
+        # rzucał StringDataRightTruncation - na SQLite (testy/lokalnie) długość
+        # nie jest egzekwowana, więc błąd nie było widać lokalnie. Pole musi
+        # być bez limitu (TextField), inaczej regresja przejdzie testy mimo
+        # błędu na produkcji.
+        field = EmailLog._meta.get_field('recipient')
+        self.assertIsNone(field.max_length)
+        long_recipient_list = ', '.join(f'osoba{i}@example.com' for i in range(20))
+        self.assertGreater(len(long_recipient_list), 200)
+        log = EmailLog.objects.create(recipient=long_recipient_list, subject='X', body='Y')
+        log.refresh_from_db()
+        self.assertEqual(log.recipient, long_recipient_list)
+
     def test_sprzedaz_lubeck_department_selectable_and_recipient(self):
+        # SL jest wybierana na checkliście sensoryki (przez dział SD), nie
+        # przy tworzeniu produkcji.
         sl_user = _make_user('sluser2', 'SL', email='sl2@example.com')
-        resp = self.client.get('/nowa/')
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
         self.assertContains(resp, 'Sluser2 SL')
 
         prod = FirstProduction.objects.create(
@@ -555,6 +577,7 @@ class ReleaseDecisionWorkflowTests(TestCase):
             'sensory-TOTAL_FORMS': str(sensory_params.count()),
             'sensory-INITIAL_FORMS': str(sensory_params.count()),
             **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'person_sd': str(self.sd.pk),
             'next': '1',
         })
         packaging_items = self.prod.checklist_after.packaging_items.all()
@@ -562,6 +585,7 @@ class ReleaseDecisionWorkflowTests(TestCase):
             'packaging-TOTAL_FORMS': str(packaging_items.count()),
             'packaging-INITIAL_FORMS': str(packaging_items.count()),
             **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            'person_sd': str(self.sd.pk),
             'umk_count': '42',
             'complete': '1',
         })
@@ -960,15 +984,44 @@ class UserDeleteTests(TestCase):
         self.assertTrue(User.objects.filter(pk=self.admin.pk).exists())
 
     def test_non_staff_cannot_delete_user(self):
+        # /uzytkownicy/ samo w sobie jest teraz dostępne tylko dla roli Admin
+        # (is_staff) - więc dla użytkownika spoza tej roli przekierowanie z
+        # usuwania konta samo dalej przekierowuje (do dashboardu), stąd
+        # target_status_code=302 zamiast domyślnego 200.
         self.client.force_login(self.other)
         resp = self.client.post(f'/uzytkownicy/{self.admin.pk}/usun/')
-        self.assertRedirects(resp, '/uzytkownicy/')
+        self.assertRedirects(resp, '/uzytkownicy/', target_status_code=302)
         self.assertTrue(User.objects.filter(pk=self.admin.pk).exists())
 
     def test_user_list_has_no_login_column(self):
         self.client.force_login(self.admin)
         resp = self.client.get('/uzytkownicy/')
         self.assertNotContains(resp, '<th>Login</th>')
+
+    def test_non_admin_cannot_reach_user_panel_views(self):
+        # "Osoby"/Użytkownicy jest dostępne tylko dla roli Admin (is_staff) -
+        # dla każdego innego użytkownika każdy widok panelu ma przekierować,
+        # a nie zwrócić 200.
+        self.client.force_login(self.other)
+        for path in (
+            '/uzytkownicy/',
+            '/uzytkownicy/nowy/',
+            f'/uzytkownicy/{self.admin.pk}/edytuj/',
+            f'/uzytkownicy/{self.admin.pk}/chip/',
+            '/uzytkownicy/import/',
+        ):
+            resp = self.client.get(path)
+            self.assertEqual(resp.status_code, 302, f'{path} should redirect for non-admin')
+
+    def test_admin_link_hidden_from_nav_for_non_admin(self):
+        self.client.force_login(self.other)
+        resp = self.client.get('/')
+        self.assertNotContains(resp, 'Użytkownicy')
+
+    def test_admin_link_shown_in_nav_for_admin(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get('/')
+        self.assertContains(resp, 'Użytkownicy')
 
 
 class ChipLoginAuthCodeTests(TestCase):
@@ -1250,3 +1303,381 @@ class ItDepartmentTests(TestCase):
         resp = self.client.get(f'/{prod.pk}/etap1/')
         self.assertTrue(resp.context['form'].fields['order_updated_status'].disabled)
         self.assertTrue(resp.context['form'].fields['bom_set_status'].disabled)
+
+
+class ProductionFieldDeptLockTests(TestCase):
+    """"Szczegółowe informacje" (poza zakresem produkcji i komentarzem) i
+    "Numery" są edytowalne tylko przez dział nadzorujący (SD, wyjątek: zakres
+    produkcji - SC; komentarz - każdy; Numery - RD)."""
+
+    def setUp(self):
+        self.rd = _make_user('rduser', 'RD')
+        self.sd = _make_user('sduser', 'SD')
+        self.sc = _make_user('scuser', 'SC')
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full',
+            zmiany='stare', rd_number='R1', recipe='old-recipe')
+
+    def test_rd_cannot_change_szczegolowe_informacje_but_can_change_numery(self):
+        self.client.force_login(self.rd)
+        resp = self.client.post(f'/{self.prod.pk}/edytuj/', {
+            'sap_zlecenie': '1', 'sap_material': '', 'product_name': 'X', 'scope': 'sensory',
+            'zmiany': 'nowe', 'rd_number': 'R2', 'recipe': 'new-recipe',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.scope, 'full')      # SD/SC pole - bez zmian
+        self.assertEqual(self.prod.zmiany, 'stare')     # SD pole - bez zmian
+        self.assertEqual(self.prod.rd_number, 'R2')      # Numery - RD może
+        self.assertEqual(self.prod.recipe, 'new-recipe')
+
+    def test_sc_can_change_scope_but_not_other_szczegolowe_fields(self):
+        self.client.force_login(self.sc)
+        resp = self.client.post(f'/{self.prod.pk}/edytuj/', {
+            'sap_zlecenie': '1', 'sap_material': '', 'product_name': 'X', 'scope': 'sensory',
+            'zmiany': 'nowe',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.scope, 'sensory')
+        self.assertEqual(self.prod.zmiany, 'stare')
+
+    def test_sd_can_change_szczegolowe_informacje_but_not_numery(self):
+        self.client.force_login(self.sd)
+        resp = self.client.post(f'/{self.prod.pk}/edytuj/', {
+            'sap_zlecenie': '1', 'sap_material': '', 'product_name': 'X', 'scope': 'full',
+            'zmiany': 'nowe', 'rd_number': 'R3',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.zmiany, 'nowe')
+        self.assertEqual(self.prod.rd_number, 'R1')
+
+    def test_komentarz_editable_by_everyone(self):
+        self.client.force_login(self.rd)
+        resp = self.client.post(f'/{self.prod.pk}/edytuj/', {
+            'sap_zlecenie': '1', 'sap_material': '', 'product_name': 'X', 'scope': 'full',
+            'komentarz': 'uwaga od RD',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.komentarz, 'uwaga od RD')
+
+    def test_admin_bypasses_all_locks(self):
+        self.rd.is_staff = True
+        self.rd.save()
+        self.client.force_login(self.rd)
+        resp = self.client.post(f'/{self.prod.pk}/edytuj/', {
+            'sap_zlecenie': '1', 'sap_material': '', 'product_name': 'X', 'scope': 'sensory',
+            'zmiany': 'nowe przez admina',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.scope, 'sensory')
+        self.assertEqual(self.prod.zmiany, 'nowe przez admina')
+
+    def test_new_production_can_still_be_created_by_non_sd_department(self):
+        # scope wymaga wartości (brak blank=True) - disabled=True nie może
+        # blokować tworzenia nowej produkcji nawet przez dział bez dostępu
+        # do tego pola (spada na domyślną wartość modelu).
+        self.client.force_login(self.rd)
+        resp = self.client.post('/nowa/', {
+            'sap_zlecenie': '2', 'sap_material': '', 'product_name': 'Nowa', 'scope': 'sensory',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.assertEqual(FirstProduction.objects.get(sap_zlecenie='2').scope, 'full')
+
+
+class ProductionReminderTests(TestCase):
+    """Przypomnienie 24h przed zaplanowaną produkcją, do całej puli mailowej +
+    zespołu danej produkcji, niezależne od przypomnienia w dniu produkcji."""
+
+    def setUp(self):
+        from django.utils import timezone
+        self.sd = _make_user('sduser', 'SD')
+        self.tomorrow = timezone.localdate() + timezone.timedelta(days=1)
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full',
+            data_produkcji=self.tomorrow, person_sd=self.sd)
+
+    def test_sends_24h_reminder_for_production_tomorrow(self):
+        from .views import _send_24h_before_production_reminders
+        _send_24h_before_production_reminders()
+        self.prod.refresh_from_db()
+        self.assertIsNotNone(self.prod.reminder_24h_sent_at)
+        reminder_mail = next(m for m in mail.outbox if 'Za 24h produkcja' in m.subject)
+        self.assertIn(self.sd.email, reminder_mail.to)
+
+    def test_does_not_resend_same_day(self):
+        from .views import _send_24h_before_production_reminders
+        _send_24h_before_production_reminders()
+        mail.outbox.clear()
+        _send_24h_before_production_reminders()
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_does_not_fire_for_production_not_tomorrow(self):
+        from django.utils import timezone
+        from .views import _send_24h_before_production_reminders
+        self.prod.data_produkcji = timezone.localdate()
+        self.prod.save(update_fields=['data_produkcji'])
+        _send_24h_before_production_reminders()
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_does_not_fire_for_released_production(self):
+        from .views import _send_24h_before_production_reminders
+        self.prod.status = 'zwolniona'
+        self.prod.save(update_fields=['status'])
+        _send_24h_before_production_reminders()
+        self.assertEqual(len(mail.outbox), 0)
+
+
+class ChecklistBeforeConfirmationStampTests(TestCase):
+    """Zapisanie checklisty Etapu I przez osobę z działu nadzorującego ma
+    automatycznie zaciągnąć jej imię i nazwisko do pola potwierdzenia tego
+    działu (nie ręczne wpisywanie) - widoczne potem w PDF Etapu I."""
+
+    def setUp(self):
+        self.rd = _make_user('rduser', 'RD')
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full')
+
+    def test_saving_stamps_full_name_for_own_department(self):
+        self.client.force_login(self.rd)
+        resp = self.client.post(f'/{self.prod.pk}/etap1/', {'save': '1'})
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        cb = self.prod.checklist_before
+        self.assertEqual(cb.confirm_rd, self.rd.get_full_name())
+
+    def test_confirm_field_is_not_directly_submittable(self):
+        # Nikt nie może wpisać cudzego potwierdzenia ręcznie przez POST -
+        # confirm_* jest wyłączone z formularza.
+        self.client.force_login(self.rd)
+        self.client.post(f'/{self.prod.pk}/etap1/', {
+            'save': '1', 'confirm_sd': 'Podszywacz',
+        })
+        cb = self.prod.checklist_before
+        self.assertEqual(cb.confirm_sd, '')
+
+    def test_department_without_confirm_mapping_does_not_stamp_anything(self):
+        it_user = _make_user('ituser', 'IT')
+        self.client.force_login(it_user)
+        self.client.post(f'/{self.prod.pk}/etap1/', {'save': '1'})
+        cb = self.prod.checklist_before
+        for field in ('confirm_rd', 'confirm_sd', 'confirm_sc', 'confirm_qa', 'confirm_ql', 'confirm_te', 'confirm_pp'):
+            self.assertEqual(getattr(cb, field), '')
+
+
+class StageRelabelTests(TestCase):
+    """Etapy przesunięte o jeden w górę po dodaniu "Etap I - Dane SAP" jako
+    pierwszego etapu (dawny Etap I to teraz Etap II, itd)."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full')
+
+    def test_production_detail_step_indicator_has_new_labels(self):
+        resp = self.client.get(f'/{self.prod.pk}/')
+        self.assertContains(resp, 'Etap I - Dane SAP')
+        self.assertContains(resp, 'Etap II – Checklista przed produkcją')
+        self.assertContains(resp, 'Etap III – Checklista po produkcji')
+        self.assertContains(resp, 'Etap IV – Zwolnienie do sprzedaży')
+
+    def test_checklist_before_is_now_etap_ii(self):
+        resp = self.client.get(f'/{self.prod.pk}/etap1/')
+        self.assertContains(resp, 'Etap II – Checklista przed produkcją')
+
+    def test_checklist_after_sensory_is_now_etap_iii(self):
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.assertContains(resp, 'Etap III – Parametry sensoryczne')
+
+
+class TeamSelectionMovedToChecklistTests(TestCase):
+    """Zespół nie jest już wybierany przy edycji produkcji - jest wybierany
+    bezpośrednio na checkliście sensoryki (SD, QA, R&D, PT, CE, Sprzedaż
+    Lubeck) i pakowania (SD, PP, QA, QL, CE, Sprzedaż Lubeck), przez osobę z
+    odpowiedniego działu (Sprzedaż Lubeck - przez SD)."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.qa = _make_user('qauser', 'QA')
+        self.rd = _make_user('rduser', 'RD')
+        self.pt = _make_user('ptuser', 'TE')
+        self.ce = _make_user('ceuser', 'CE')
+        self.sl = _make_user('sluser', 'SL')
+        self.pp = _make_user('ppuser', 'PP')
+        self.ql = _make_user('qluser', 'QL')
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full')
+
+    def test_production_edit_form_has_no_team_section(self):
+        self.client.force_login(self.sd)
+        resp = self.client.get(f'/{self.prod.pk}/edytuj/')
+        self.assertNotContains(resp, 'name="person_rd"')
+        self.assertNotContains(resp, 'name="person_sl"')
+
+    def test_sensory_checklist_shows_team_picker_with_correct_roles(self):
+        self.client.force_login(self.sd)
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        for field in ('person_sd', 'person_qa', 'person_rd', 'person_te', 'person_ce', 'person_sl'):
+            self.assertContains(resp, f'name="{field}"')
+        self.assertNotContains(resp, 'name="person_pp"')
+        self.assertNotContains(resp, 'name="person_ql"')
+
+    def test_packaging_checklist_shows_team_picker_with_correct_roles(self):
+        self.client.force_login(self.sd)
+        resp = self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
+        for field in ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce', 'person_sl'):
+            self.assertContains(resp, f'name="{field}"')
+        self.assertNotContains(resp, 'name="person_rd"')
+        self.assertNotContains(resp, 'name="person_te"')
+
+    def _sensory_post(self, extra):
+        self.prod.refresh_from_db()
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.prod.refresh_from_db()
+        sensory_params = self.prod.checklist_after.sensory_params.all()
+        data = {
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'save': '1',
+        }
+        data.update(extra)
+        return self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', data)
+
+    def test_rd_user_can_pick_only_rd_role(self):
+        self.client.force_login(self.rd)
+        self._sensory_post({'person_rd': str(self.rd.pk), 'person_sd': str(self.sd.pk)})
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.person_rd_id, self.rd.pk)
+        self.assertIsNone(self.prod.person_sd_id)  # zablokowane - RD nie może wybrać SD
+
+    def test_sd_user_can_pick_sl_role(self):
+        self.client.force_login(self.sd)
+        self._sensory_post({'person_sl': str(self.sl.pk)})
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.person_sl_id, self.sl.pk)
+
+    def test_qa_user_cannot_pick_sl_role(self):
+        self.client.force_login(self.qa)
+        self._sensory_post({'person_sl': str(self.sl.pk), 'person_qa': str(self.qa.pk)})
+        self.prod.refresh_from_db()
+        self.assertIsNone(self.prod.person_sl_id)  # zablokowane - tylko SD wybiera SL
+        self.assertEqual(self.prod.person_qa_id, self.qa.pk)
+
+    def test_packaging_prefills_sd_qa_ce_from_sensory(self):
+        # Każda rola jest wybierana tylko przez osobę z tego działu - SD nie
+        # może ustawić QA/CE za nich, więc symulujemy trzy osobne osoby
+        # zapisujące checklistę sensoryczną, każda swoją rolę.
+        self.client.force_login(self.sd)
+        self._sensory_post({'person_sd': str(self.sd.pk)})
+        self.client.force_login(self.qa)
+        self._sensory_post({'person_qa': str(self.qa.pk)})
+        self.client.force_login(self.ce)
+        self._sensory_post({'person_ce': str(self.ce.pk)})
+
+        self.client.force_login(self.sd)
+        resp = self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
+        self.assertContains(resp, f'<option value="{self.sd.pk}" selected>')
+        self.assertContains(resp, f'<option value="{self.qa.pk}" selected>')
+        self.assertContains(resp, f'<option value="{self.ce.pk}" selected>')
+
+    def test_acceptor_field_locked_to_sd_and_ce(self):
+        rd_user = self.rd
+        self.client.force_login(rd_user)
+        resp = self.client.get(f'/{self.prod.pk}/edytuj/')
+        self.assertTrue(resp.context['form'].fields['acceptor'].disabled)
+
+        self.client.force_login(self.sd)
+        resp = self.client.get(f'/{self.prod.pk}/edytuj/')
+        self.assertFalse(resp.context['form'].fields['acceptor'].disabled)
+
+        self.client.force_login(self.ce)
+        resp = self.client.get(f'/{self.prod.pk}/edytuj/')
+        self.assertFalse(resp.context['form'].fields['acceptor'].disabled)
+
+
+class SensoryLockAfterFirstCompletionTests(TestCase):
+    """Sensoryka ma być uzupełniana raz i tylko raz ma być wysyłany mail -
+    po zatwierdzeniu ("next") checklista jest zablokowana, chyba że korekta
+    z Etapu IV wraca do etapu sensorycznego (odblokowuje dokładnie raz)."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full', person_sd=self.sd)
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+
+    def _sensory_params(self):
+        self.prod.refresh_from_db()
+        return self.prod.checklist_after.sensory_params.all()
+
+    def _submit_next(self):
+        sensory_params = self._sensory_params()
+        return self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'person_sd': str(self.sd.pk),
+            'next': '1',
+        })
+
+    def test_first_submission_sets_lock_and_sends_one_email(self):
+        self._submit_next()
+        ca = self.prod.checklist_after
+        ca.refresh_from_db()
+        self.assertIsNotNone(ca.sensory_completed_at)
+        sent = [m for m in mail.outbox if 'Sensoryka zaakceptowana' in m.subject]
+        self.assertEqual(len(sent), 1)
+
+    def test_second_submission_is_blocked_and_no_extra_email(self):
+        self._submit_next()
+        mail.outbox.clear()
+        resp = self._submit_next()
+        self.assertRedirects(resp, f'/{self.prod.pk}/etap2/sensoryczne/')
+        sent = [m for m in mail.outbox if 'Sensoryka zaakceptowana' in m.subject]
+        self.assertEqual(len(sent), 0)
+
+    def test_locked_page_renders_disabled_fields(self):
+        self._submit_next()
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.assertContains(resp, 'zablokowana')
+        self.assertTrue(resp.context['form'].fields['uwagi'].disabled)
+        self.assertTrue(resp.context['sensory_fs'].forms[0].fields['status'].disabled)
+        self.assertNotContains(resp, 'Zatwierdź sensorykę')
+
+    def test_correction_to_sensory_unlocks_exactly_once(self):
+        self._submit_next()
+        # przejdź przez pakowanie do etapu IV
+        self.prod.refresh_from_db()
+        packaging_items = self.prod.checklist_after.packaging_items.all()
+        self.client.post(f'/{self.prod.pk}/etap2/pakowanie/', {
+            'packaging-TOTAL_FORMS': str(packaging_items.count()),
+            'packaging-INITIAL_FORMS': str(packaging_items.count()),
+            **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            'complete': '1',
+        })
+        self.client.post(f'/{self.prod.pk}/etap3/', {
+            'decision': 'correction',
+            'correction_comment': 'Popraw sensorykę',
+            'correction_return_stage': 'sensory',
+            'acceptance_signature': '',
+        })
+        ca = self.prod.checklist_after
+        ca.refresh_from_db()
+        self.assertIsNone(ca.sensory_completed_at)
+
+        # odblokowane raz - da się uzupełnić i zatwierdzić ponownie
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.assertNotContains(resp, 'zablokowana')
+        self._submit_next()
+        ca.refresh_from_db()
+        self.assertIsNotNone(ca.sensory_completed_at)
+
+        # a teraz zablokowane znowu
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.assertContains(resp, 'zablokowana')

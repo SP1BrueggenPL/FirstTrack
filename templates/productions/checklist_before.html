@@ -1,10 +1,10 @@
 {% extends "productions/base.html" %}
-{% block title %}Etap I – {{ production.product_name }}{% endblock %}
+{% block title %}Etap II – {{ production.product_name }}{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
-    <h4 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>Etap I – Checklista przed produkcją</h4>
+    <h4 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>Etap II – Checklista przed produkcją</h4>
     <small class="text-muted">{{ production.product_name }} &nbsp;|&nbsp; CD-00002055 str. 1</small>
   </div>
   <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary btn-sm">
@@ -99,6 +99,10 @@
                   <small class="text-muted">Ilość:</small>
                   {{ form.additional_samples_count }}
                 </div>
+                <div class="d-flex gap-1 align-items-center mt-1">
+                  <small class="text-muted">Uwagi:</small>
+                  {{ form.additional_samples_uwagi }}
+                </div>
               </td>
               <td><span class="badge bg-light text-dark">SD</span></td>
             </tr>
@@ -155,7 +159,7 @@
       <i class="bi bi-floppy me-1"></i>Zapisz roboczo
     </button>
     <button type="submit" name="complete" class="btn btn-success">
-      <i class="bi bi-check2-circle me-1"></i>Zatwierdź Etap I
+      <i class="bi bi-check2-circle me-1"></i>Zatwierdź Etap II
     </button>
     <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary">Anuluj</a>
     {% if form.instance.pk %}

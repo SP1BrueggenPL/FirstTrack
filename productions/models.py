@@ -163,6 +163,7 @@ class FirstProduction(models.Model):
     email_sent     = models.BooleanField('Mail wysłany', default=False)
     email_sent_at  = models.DateTimeField('Data wysłania maila', null=True, blank=True)
     reminder_sent_at = models.DateTimeField('Data wysłania przypomnienia', null=True, blank=True)
+    reminder_24h_sent_at = models.DateTimeField('Data wysłania przypomnienia 24h przed', null=True, blank=True)
     created_at     = models.DateTimeField(auto_now_add=True)
     updated_at     = models.DateTimeField(auto_now=True)
 
@@ -226,6 +227,7 @@ class ChecklistBefore(models.Model):
     planned_yield_takty   = models.CharField('Takty', max_length=50, blank=True)
     additional_samples_status = models.CharField(max_length=3, choices=ITEM_STATUS, blank=True)
     additional_samples_count  = models.CharField('Ilość próbek', max_length=20, blank=True)
+    additional_samples_uwagi  = models.TextField('Uwagi (dodatkowe próbki/UMK)', blank=True)
     test_packaging_1_name   = models.CharField(max_length=200, blank=True)
     test_packaging_1_status = models.CharField(max_length=3, choices=ITEM_STATUS, blank=True)
     test_packaging_1_nadzor = models.CharField(max_length=100, blank=True)
@@ -235,11 +237,16 @@ class ChecklistBefore(models.Model):
     test_packaging_3_name   = models.CharField(max_length=200, blank=True)
     test_packaging_3_status = models.CharField(max_length=3, choices=ITEM_STATUS, blank=True)
     test_packaging_3_nadzor = models.CharField(max_length=100, blank=True)
-    confirm_rd  = models.CharField('Podpis R&D', max_length=100, blank=True)
-    confirm_pp  = models.CharField('Podpis PP',  max_length=100, blank=True)
-    confirm_ce  = models.CharField('Podpis CE',  max_length=100, blank=True)
-    confirm_qa  = models.CharField('Podpis QA',  max_length=100, blank=True)
-    confirm_sd  = models.CharField('Podpis SD',  max_length=100, blank=True)
+    # Potwierdzenia - imię i nazwisko osoby z danego działu, która ostatnio
+    # zapisała checklistę (patrz _stamp_checklist_before_confirmation w
+    # views.py) - nie jest to już ręcznie wpisywane pole tekstowe.
+    confirm_rd  = models.CharField('Potwierdził R&D', max_length=100, blank=True)
+    confirm_sd  = models.CharField('Potwierdził SD',  max_length=100, blank=True)
+    confirm_sc  = models.CharField('Potwierdził SC',  max_length=100, blank=True)
+    confirm_qa  = models.CharField('Potwierdził QA',  max_length=100, blank=True)
+    confirm_ql  = models.CharField('Potwierdził QL',  max_length=100, blank=True)
+    confirm_te  = models.CharField('Potwierdził PT',  max_length=100, blank=True)
+    confirm_pp  = models.CharField('Potwierdził PP',  max_length=100, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     created_at   = models.DateTimeField(auto_now_add=True)
     updated_at   = models.DateTimeField(auto_now=True)
@@ -282,6 +289,10 @@ class ChecklistAfter(models.Model):
     comparison_reference = models.BooleanField('Próbka wzorcowa',   default=False)
     yield_kg    = models.CharField('Uzyskana wydajność kg/h', max_length=50, blank=True)
     yield_takty = models.CharField('Takty', max_length=50, blank=True)
+    lab_samples_delivered = models.CharField(
+        'Czy dostarczono próbki do laboratorium?', max_length=3,
+        choices=[('tak', 'Tak'), ('nie', 'Nie')], blank=True,
+    )
     uwagi       = models.TextField('Uwagi', blank=True)
 
     DECISION_CHOICES = [
@@ -320,7 +331,14 @@ class ChecklistAfter(models.Model):
     photo_3 = models.ImageField(upload_to='production_photos/', blank=True, null=True)
     photo_4 = models.ImageField(upload_to='production_photos/', blank=True, null=True)
     umk_count    = models.CharField('Liczba UMK do śluzy', max_length=50, blank=True)
+    umk_uwagi    = models.TextField('Uwagi (UMK)', blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    # Sensoryka ma być uzupełniana raz i tylko raz mail o akceptacji ma być
+    # wysłany - ustawiane przy zatwierdzeniu ("next"), blokuje dalszą edycję
+    # checklisty sensorycznej. Zerowane tylko przy korekcie kierującej z
+    # powrotem do etapu sensorycznego (patrz release_production w views.py),
+    # co odblokowuje dokładnie jedno kolejne uzupełnienie.
+    sensory_completed_at = models.DateTimeField(null=True, blank=True)
     created_at   = models.DateTimeField(auto_now_add=True)
     updated_at   = models.DateTimeField(auto_now=True)
 
@@ -345,12 +363,13 @@ class ChecklistAfter(models.Model):
 
 class SensoryParam(models.Model):
     PARAM_CHOICES = [
-        ('smak',     'Smak'),
-        ('zapach',   'Zapach'),
-        ('wyglad',   'Wygląd'),
-        ('kolor',    'Kolor'),
-        ('tekstura', 'Tekstura'),
-        ('gestosc',  'Gęstość usypowa'),
+        ('smak',       'Smak'),
+        ('zapach',     'Zapach'),
+        ('wyglad',     'Wygląd'),
+        ('kolor',      'Kolor'),
+        ('tekstura',   'Tekstura'),
+        ('gestosc',    'Gęstość usypowa'),
+        ('wilgotnosc', 'Wilgotność'),
     ]
     checklist = models.ForeignKey(ChecklistAfter, on_delete=models.CASCADE, related_name='sensory_params')
     param  = models.CharField(max_length=20, choices=PARAM_CHOICES)
@@ -390,7 +409,11 @@ class PackagingItem(models.Model):
 class EmailLog(models.Model):
     production = models.ForeignKey(FirstProduction, on_delete=models.CASCADE, related_name='email_logs',
                                    null=True, blank=True)
-    recipient  = models.CharField(max_length=200)
+    # TextField, nie CharField - lista adresatów (join po przecinku) rośnie z
+    # liczbą przypisanych ról zespołu + stałej puli adresów, i przy w pełni
+    # obsadzonym zespole łatwo przekracza 200 znaków (StringDataRightTruncation
+    # na Postgresie, ale nie na SQLite - stąd błąd wychodził dopiero na Azure).
+    recipient  = models.TextField()
     subject    = models.CharField(max_length=300)
     body       = models.TextField()
     sent_at    = models.DateTimeField(auto_now_add=True)
