@@ -1,10 +1,10 @@
 {% extends "productions/base.html" %}
-{% block title %}Etap II Krok 2 – {{ production.product_name }}{% endblock %}
+{% block title %}Etap III Krok 2 – {{ production.product_name }}{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
-    <h4 class="mb-0"><i class="bi bi-box me-2"></i>Etap II – Pakowanie</h4>
+    <h4 class="mb-0"><i class="bi bi-box me-2"></i>Etap III – Pakowanie</h4>
     <small class="text-muted">
       {{ production.product_name }}
       {% if not production.is_packaging_only %}&nbsp;|&nbsp; Krok 2 z 2{% endif %}
@@ -163,10 +163,10 @@
       <i class="bi bi-floppy me-1"></i>Zapisz roboczo
     </button>
     <button type="submit" name="complete" class="btn btn-success">
-      <i class="bi bi-check2-circle me-1"></i>Zatwierdź Etap II
+      <i class="bi bi-check2-circle me-1"></i>Zatwierdź Etap III
     </button>
     <a href="{% url 'pdf_etap2' production.pk %}" class="btn btn-outline-dark ms-auto" target="_blank">
-      <i class="bi bi-file-earmark-pdf me-1"></i>Pobierz PDF Etap II
+      <i class="bi bi-file-earmark-pdf me-1"></i>Pobierz PDF Etap III
     </a>
   </div>
 </form>

@@ -184,6 +184,16 @@ def _person_field(dept_code, label, empty_label='– wybierz –'):
     return f
 
 
+# "Szczegółowe informacje"/"Numery" - pola edytowalne tylko przez dział
+# nadzorujący (poza "komentarz", edytowalny przez każdego). Ten sam wzorzec
+# blokowania (disabled=True) co CHECKLIST_BEFORE_ROW_FIELDS w views.py.
+PRODUCTION_FIELD_DEPT_LOCKS = [
+    (['scope'], ['SC']),
+    (['data_produkcji', 'zmiany', 'layout', 'typ_produkcji', 'fert_number'], ['SD']),
+    (['rd_number', 'recipe', 'crm_project_nr'], ['RD']),
+]
+
+
 class FirstProductionForm(forms.ModelForm):
     data_produkcji = forms.DateField(
         required=False,
@@ -261,6 +271,19 @@ class FirstProductionForm(forms.ModelForm):
         for field_name in ('fert_number', 'recipe'):
             self.fields[field_name].required = False
 
+        # disabled=True (nie tylko ukrycie w szablonie) - Django ignoruje
+        # przesłaną wartość i przy zapisie zachowuje dotychczasową (patrz
+        # BaseForm._clean_fields), więc ograniczenie działa nawet gdyby ktoś
+        # ręcznie odblokował pole w przeglądarce. Administratorzy (is_staff)
+        # i wywołania bez podanego usera (np. import) nie są ograniczane.
+        if self.user is not None and not self.user.is_staff:
+            dept = getattr(getattr(self.user, 'profile', None), 'department', '') or ''
+            for field_names, allowed_depts in PRODUCTION_FIELD_DEPT_LOCKS:
+                if dept in allowed_depts:
+                    continue
+                for field_name in field_names:
+                    self.fields[field_name].disabled = True
+
     def _user_label(self, user):
         return user.get_full_name() or user.username
 
@@ -309,7 +332,13 @@ class ChecklistBeforeForm(forms.ModelForm):
     class Meta:
         model = ChecklistBefore
         fields = '__all__'
-        exclude = ['production', 'completed_at', 'created_at', 'updated_at']
+        # confirm_* nie są edytowalne przez formularz - zapisywane serwerowo
+        # (patrz _stamp_checklist_before_confirmation w views.py) na podstawie
+        # zalogowanego użytkownika, żeby nie dało się wpisać cudzego imienia.
+        exclude = [
+            'production', 'completed_at', 'created_at', 'updated_at',
+            'confirm_rd', 'confirm_sd', 'confirm_sc', 'confirm_qa', 'confirm_ql', 'confirm_te', 'confirm_pp',
+        ]
         widgets = {
             'order_updated_status':    forms.RadioSelect(attrs={'class': 'status-radio'}),
             'pwpr_status':             forms.RadioSelect(attrs={'class': 'status-radio'}),
@@ -338,17 +367,13 @@ class ChecklistBeforeForm(forms.ModelForm):
             'planned_yield_kg':        forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'kg/h'}),
             'planned_yield_takty':     forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'takty'}),
             'additional_samples_count': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Ilość'}),
+            'additional_samples_uwagi': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Uwagi'}),
             'test_packaging_1_name':   forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nazwa pozycji'}),
             'test_packaging_1_nadzor': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nadzór'}),
             'test_packaging_2_name':   forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nazwa pozycji'}),
             'test_packaging_2_nadzor': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nadzór'}),
             'test_packaging_3_name':   forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nazwa pozycji'}),
             'test_packaging_3_nadzor': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nadzór'}),
-            'confirm_rd':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
-            'confirm_pp':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
-            'confirm_ce':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
-            'confirm_qa':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
-            'confirm_sd':  forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
         }
 
 
@@ -392,7 +417,7 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
             'production_date',
             'sample_start', 'sample_middle', 'sample_end',
             'comparison_benchmark', 'comparison_lab', 'comparison_reference',
-            'yield_kg', 'yield_takty', 'uwagi',
+            'yield_kg', 'yield_takty', 'lab_samples_delivered', 'uwagi',
             *_SIG_FIELD_NAMES, 'photo_sl',
         ]
         widgets = {
@@ -400,6 +425,7 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
             'photo_sl':       _SL_PHOTO_WIDGET,
             'yield_kg':       forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'kg/h'}),
             'yield_takty':    forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'takty'}),
+            'lab_samples_delivered': forms.RadioSelect(attrs={'class': 'status-radio'}),
             'uwagi':          forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 3}),
         }
 

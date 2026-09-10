@@ -147,6 +147,10 @@
     <td colspan="4">Takty: {% if ca %}{{ ca.yield_takty|default:"" }}{% endif %}</td>
   </tr>
   <tr>
+    <td class="label">Czy dostarczono próbki do laboratorium?</td>
+    <td colspan="5">{% if ca %}{{ ca.get_lab_samples_delivered_display|default:"" }}{% endif %}</td>
+  </tr>
+  <tr>
     <td class="label">Uwagi:</td>
     <td colspan="5">{% if ca %}{{ ca.uwagi|default:"" }}{% endif %}</td>
   </tr>

@@ -1,10 +1,10 @@
 {% extends "productions/base.html" %}
-{% block title %}Etap II Krok 1 – {{ production.product_name }}{% endblock %}
+{% block title %}Etap III Krok 1 – {{ production.product_name }}{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
-    <h4 class="mb-0"><i class="bi bi-eyedropper me-2"></i>Etap II – Parametry sensoryczne</h4>
+    <h4 class="mb-0"><i class="bi bi-eyedropper me-2"></i>Etap III – Parametry sensoryczne</h4>
     <small class="text-muted">
       {{ production.product_name }}
       {% if not production.is_sensory_only %}&nbsp;|&nbsp; Krok 1 z 2{% endif %}
@@ -84,7 +84,7 @@
         <div class="col-md-3">
           <label class="form-label fw-semibold small d-block">Linia pakująca</label>
           <span class="fw-semibold">{{ production.packaging_line|default:"–" }}</span>
-          <div class="form-text small">Pochodzi z Etapu I.</div>
+          <div class="form-text small">Pochodzi z Etapu II.</div>
         </div>
         <div class="col-md-3">
           <label class="form-label fw-semibold small">Data produkcji</label>
@@ -172,6 +172,17 @@
         <div class="col-md-2">
           <label class="fw-semibold small">Takty</label>
           {{ form.yield_takty }}
+        </div>
+        <div class="col-12">
+          <label class="fw-semibold small d-block">Czy dostarczono próbki do laboratorium?</label>
+          <div class="d-flex gap-3">
+            {% for radio in form.lab_samples_delivered %}
+            <div class="form-check form-check-inline">
+              {{ radio.tag }}
+              <label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label>
+            </div>
+            {% endfor %}
+          </div>
         </div>
         <div class="col-12">
           <label class="fw-semibold small">Uwagi</label>

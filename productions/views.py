@@ -155,6 +155,7 @@ def chip_login(request):
 @login_required
 def dashboard(request):
     _send_due_production_reminders()
+    _send_24h_before_production_reminders()
 
     productions = FirstProduction.objects.select_related(
         'person_sd', 'acceptor'
@@ -462,10 +463,12 @@ def production_detail(request, pk):
     if checklist_before:
         confirmations = [
             ('R&D', checklist_before.confirm_rd),
-            ('PP',  checklist_before.confirm_pp),
-            ('CE',  checklist_before.confirm_ce),
-            ('QA',  checklist_before.confirm_qa),
             ('SD',  checklist_before.confirm_sd),
+            ('SC',  checklist_before.confirm_sc),
+            ('QA',  checklist_before.confirm_qa),
+            ('QL',  checklist_before.confirm_ql),
+            ('PT',  checklist_before.confirm_te),
+            ('PP',  checklist_before.confirm_pp),
         ]
 
     # Zdjęcia z akceptacji/pakowania - podgląd w samej aplikacji, nie tylko w
@@ -505,13 +508,13 @@ CHECKLIST_BEFORE_ROW_FIELDS = [
     (['analysis_form_status', 'analysis_form_version'], ['QA']),
     (['zero_sample_status', 'zero_sample_uwagi'], ['RD', 'QL']),
     (['production_card_status', 'production_card_uwagi'], ['RD', 'QA']),
-    (['machine_suitable_status', 'machine_suitable_uwagi'], ['CE', 'PP']),
+    (['machine_suitable_status', 'machine_suitable_uwagi'], ['PT']),
     (['packaging_layout_status', 'packaging_layout_uwagi'], ['SD']),
     (['collective_label_status', 'collective_label_uwagi'], ['SD']),
     (['date_format_status', 'date_format_uwagi'], ['SD']),
     (['bom_set_status', 'bom_set_uwagi'], ['QA']),
     (['planned_yield_kg', 'planned_yield_takty'], ['PP', 'RD']),
-    (['additional_samples_status', 'additional_samples_count'], ['SD']),
+    (['additional_samples_status', 'additional_samples_count', 'additional_samples_uwagi'], ['SD']),
 ]
 
 
@@ -531,6 +534,24 @@ def _lock_checklist_before_rows_to_department(form, user):
             form.fields[field_name].disabled = True
 
 
+# Działy, których potwierdzenie (imię i nazwisko osoby zapisującej) trafia
+# do ChecklistBefore.confirm_* i do sekcji "Potwierdzenia" w PDF Etapu I.
+CHECKLIST_BEFORE_CONFIRM_DEPTS = {
+    'RD': 'confirm_rd', 'SD': 'confirm_sd', 'SC': 'confirm_sc',
+    'QA': 'confirm_qa', 'QL': 'confirm_ql', 'TE': 'confirm_te', 'PP': 'confirm_pp',
+}
+
+
+def _stamp_checklist_before_confirmation(cb, user):
+    """Osoba, która zapisuje checklistę, "potwierdza" swój dział - imię i
+    nazwisko trafia automatycznie do pola confirm_<dział> (bez ręcznego
+    wpisywania), pokazywane potem w PDF Etapu I."""
+    dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
+    field_name = CHECKLIST_BEFORE_CONFIRM_DEPTS.get(dept)
+    if field_name:
+        setattr(cb, field_name, user.get_full_name() or user.username)
+
+
 @login_required
 def checklist_before(request, pk):
     prod     = get_object_or_404(FirstProduction, pk=pk)
@@ -544,6 +565,7 @@ def checklist_before(request, pk):
         if form.is_valid():
             cb = form.save(commit=False)
             cb.production = prod
+            _stamp_checklist_before_confirmation(cb, request.user)
             # Linia pakująca to pole FirstProduction, nie ChecklistBefore -
             # wpisywana tutaj (Etap I), więc zapisywana na produkcji.
             prod.packaging_line = form.cleaned_data.get('packaging_line', '')
@@ -578,6 +600,7 @@ def _get_or_create_checklist_after(prod):
             # próbki dla klienta? Ilość:") - nie jest już wpisywana ręcznie
             # w Etapie III.
             umk_count=cb.additional_samples_count if cb else '',
+            umk_uwagi=cb.additional_samples_uwagi if cb else '',
         )
         instance.save()
     else:
@@ -598,6 +621,9 @@ def _get_or_create_checklist_after(prod):
             if not instance.umk_count and cb.additional_samples_count:
                 instance.umk_count = cb.additional_samples_count
                 update_fields.append('umk_count')
+            if not instance.umk_uwagi and cb.additional_samples_uwagi:
+                instance.umk_uwagi = cb.additional_samples_uwagi
+                update_fields.append('umk_uwagi')
         if update_fields:
             instance.save(update_fields=update_fields)
     return instance
@@ -678,7 +704,7 @@ def checklist_after_sensory(request, pk):
                     ca.save(update_fields=['completed_at'])
                     prod.status = 'etap2'
                     prod.save()
-                    messages.success(request, 'Parametry sensoryczne zaakceptowane. Etap II zatwierdzony.')
+                    messages.success(request, 'Parametry sensoryczne zaakceptowane. Etap III zatwierdzony.')
                     return redirect('production_detail', pk=pk)
                 messages.success(request, 'Parametry sensoryczne zapisane.')
                 return redirect('checklist_after_packaging', pk=pk)
@@ -775,7 +801,7 @@ def link_packaging_production(request, pk):
             request,
             f'Powiązano z pakowaniem „{packaging_prod.product_name}" '
             f'(zlecenie SAP {packaging_prod.sap_zlecenie or "–"}) - dane szczegółowe '
-            f'i checklista Etapu I zostały skopiowane.',
+            f'i checklista Etapu II zostały skopiowane.',
         )
     else:
         messages.error(request, 'Nie udało się powiązać - wybierz zlecenie pakowania z listy.')
@@ -835,7 +861,7 @@ def checklist_after_packaging(request, pk):
             packaging_fs.save()
             # Etap pakowania nie generuje już własnego maila - jego treść
             # trafia dodatkowo do końcowego maila ze zwolnieniem (Etap III).
-            messages.success(request, 'Etap II zatwierdzony.' if 'complete' in request.POST else 'Checklista pakowania zapisana.')
+            messages.success(request, 'Etap III zatwierdzony.' if 'complete' in request.POST else 'Checklista pakowania zapisana.')
             if 'complete' in request.POST:
                 return _link_redirect_target(request, prod, 'production_detail')
             return redirect(f"{reverse('checklist_after_packaging', args=[pk])}{'?next=' + next_url if next_url else ''}")
@@ -889,7 +915,7 @@ def release_production(request, pk):
     if not _etap2_fully_done(prod):
         messages.error(
             request,
-            'Etap III jest dostępny dopiero po ukończeniu checklisty Etapu II - '
+            'Etap IV jest dostępny dopiero po ukończeniu checklisty Etapu III - '
             'dla powiązanej pary sensoryka/pakowanie obu stron.',
         )
         return redirect('production_detail', pk=pk)
@@ -1232,6 +1258,45 @@ def _send_due_production_reminders():
             prod.save(update_fields=['reminder_sent_at'])
 
 
+def _send_24h_before_production_reminders():
+    """Przypomnienie 24h przed zaplanowaną produkcją - do całej puli mailowej
+    (management → adresy email + zespół danej produkcji), z prośbą o
+    uzupełnienie danych, jeśli nie zostały jeszcze uzupełnione. Osobne od
+    _send_due_production_reminders() (przypomnienie w dniu produkcji) -
+    każda produkcja może dostać oba, w różnym czasie."""
+    tomorrow = timezone.localdate() + timezone.timedelta(days=1)
+    due = (
+        FirstProduction.objects
+        .exclude(status='zwolniona')
+        .filter(data_produkcji=tomorrow)
+        .exclude(reminder_24h_sent_at__date=timezone.localdate())
+    )
+    for prod in due:
+        recipients = _production_team_recipients(prod)
+        if not recipients:
+            continue
+        subject = f'[FirstTrack] Za 24h produkcja – {prod.product_name}'
+        body = '\n'.join([
+            f'Za 24h ({tomorrow:%Y-%m-%d}) zaplanowana jest pierwsza produkcja:',
+            '',
+            f'Produkt:           {prod.product_name}',
+            f'Zlecenie SAP:      {prod.sap_zlecenie or "–"}',
+            f'Nr materiału SAP:  {prod.sap_material or "–"}',
+            f'Linia pakująca:    {prod.packaging_line or "–"}',
+            f'Zmiany:            {prod.zmiany or "–"}',
+            '',
+            'Jeśli dane tej produkcji (checklisty Etapu II/III) nie zostały jeszcze '
+            'uzupełnione, prosimy o ich uzupełnienie przed produkcją.',
+            '',
+            f'Otwórz aplikację: {settings.FIRSTTRACK_APP_URL}',
+            '',
+            '-- FirstTrack, H. & J. Brüggen KG --',
+        ])
+        if _send_and_log(prod, subject, body, recipients):
+            prod.reminder_24h_sent_at = timezone.now()
+            prod.save(update_fields=['reminder_24h_sent_at'])
+
+
 def _send_sensory_accepted_email(prod, ca):
     recipients = _production_team_recipients(prod)
     if not recipients:
@@ -1274,7 +1339,7 @@ def _packaging_accepted_lines(prod, ca):
     ]
     signed_lines = [f'  {role}: {name}' for role, name in signed] or ['  (brak podpisów)']
     return [
-        f'Etap II (pakowanie) dla produkcji „{prod.product_name}" został zaakceptowany.',
+        f'Etap III (pakowanie) dla produkcji „{prod.product_name}" został zaakceptowany.',
         'Zespół, który zaakceptował pakowanie:',
         *signed_lines,
     ]
@@ -1301,6 +1366,7 @@ def _send_release_email(prod, ca):
         *_packaging_accepted_lines(prod, ca),
         '',
         f'Liczba UMK do śluzy: {ca.umk_count or "–"}',
+        f'Uwagi (UMK): {ca.umk_uwagi or "–"}',
         '',
         'W załączniku: checklista końcowa (PDF), zdjęcia z akceptacji oraz zdjęcie od Sprzedaży Lubeck.',
         '',
@@ -1362,6 +1428,9 @@ def _send_correction_email(prod, ca):
 
 @login_required
 def user_list(request):
+    if not request.user.is_staff:
+        messages.error(request, 'Brak uprawnień do panelu użytkowników - dostępny tylko dla roli Admin.')
+        return redirect('dashboard')
     users = User.objects.select_related('profile').order_by(
         'profile__department', 'last_name', 'first_name'
     )
@@ -1453,6 +1522,9 @@ def _update_user_account(user, cleaned):
 
 @login_required
 def user_create(request):
+    if not request.user.is_staff:
+        messages.error(request, 'Brak uprawnień do panelu użytkowników - dostępny tylko dla roli Admin.')
+        return redirect('dashboard')
     form = UserCreateForm()
     if request.method == 'POST':
         form = UserCreateForm(request.POST)
@@ -1468,6 +1540,9 @@ def user_create(request):
 
 @login_required
 def user_edit(request, pk):
+    if not request.user.is_staff:
+        messages.error(request, 'Brak uprawnień do panelu użytkowników - dostępny tylko dla roli Admin.')
+        return redirect('dashboard')
     user = get_object_or_404(User, pk=pk)
     profile, _ = UserProfile.objects.get_or_create(user=user)
 
@@ -1540,6 +1615,9 @@ def user_reset_auth_code(request, pk):
 
 @login_required
 def user_bulk_import(request):
+    if not request.user.is_staff:
+        messages.error(request, 'Brak uprawnień do panelu użytkowników - dostępny tylko dla roli Admin.')
+        return redirect('dashboard')
     form = UserBulkImportForm()
     results = None
 
@@ -1685,6 +1763,9 @@ def _import_users_from_excel(excel_file):
 
 @login_required
 def user_chip(request, pk):
+    if not request.user.is_staff:
+        messages.error(request, 'Brak uprawnień do panelu użytkowników - dostępny tylko dla roli Admin.')
+        return redirect('dashboard')
     user = get_object_or_404(User, pk=pk)
     profile, _ = UserProfile.objects.get_or_create(user=user)
     form = UserChipForm(user=user)
