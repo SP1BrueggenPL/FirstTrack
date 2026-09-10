@@ -9,7 +9,7 @@ from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 
-from .models import ChecklistBefore, EmailLog, FirstProduction, UserProfile
+from .models import ChecklistBefore, EmailLog, EmailSettings, FirstProduction, UserProfile
 
 _1PX_PNG = base64.b64decode(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=')
@@ -1681,3 +1681,74 @@ class SensoryLockAfterFirstCompletionTests(TestCase):
         # a teraz zablokowane znowu
         resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
         self.assertContains(resp, 'zablokowana')
+
+
+class BulkEmailToggleTests(TestCase):
+    """Globalny przełącznik (Zarządzanie → Adresy email) wyłącza wysyłkę
+    maili do grupy mailowej/zespołu - do bezpiecznego testowania aplikacji
+    bez zalewania prawdziwych adresów. Nie dotyczy testowego maila."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full', person_sd=self.sd)
+
+    def test_enabled_by_default(self):
+        self.assertTrue(EmailSettings.get_solo().bulk_emails_enabled)
+
+    def test_toggle_view_flips_setting(self):
+        resp = self.client.post('/ustawienia/maile/przelacz/')
+        self.assertRedirects(resp, '/ustawienia/maile/')
+        self.assertFalse(EmailSettings.get_solo().bulk_emails_enabled)
+        self.client.post('/ustawienia/maile/przelacz/')
+        self.assertTrue(EmailSettings.get_solo().bulk_emails_enabled)
+
+    def test_disabled_blocks_actual_send_but_logs_as_skipped(self):
+        from .views import _send_and_log
+        settings_row = EmailSettings.get_solo()
+        settings_row.bulk_emails_enabled = False
+        settings_row.save()
+
+        result = _send_and_log(self.prod, 'Temat', 'Treść', ['a@example.com'])
+        self.assertTrue(result)
+        self.assertEqual(len(mail.outbox), 0)
+        log = EmailLog.objects.filter(production=self.prod).last()
+        self.assertTrue(log.skipped)
+        self.assertTrue(log.success)
+
+    def test_enabled_sends_normally(self):
+        from .views import _send_and_log
+        result = _send_and_log(self.prod, 'Temat', 'Treść', ['a@example.com'])
+        self.assertTrue(result)
+        self.assertEqual(len(mail.outbox), 1)
+        log = EmailLog.objects.filter(production=self.prod).last()
+        self.assertFalse(log.skipped)
+
+    def test_disabled_blocks_sensory_accepted_email(self):
+        settings_row = EmailSettings.get_solo()
+        settings_row.bulk_emails_enabled = False
+        settings_row.save()
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.prod.refresh_from_db()
+        sensory_params = self.prod.checklist_after.sensory_params.all()
+        self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'person_sd': str(self.sd.pk),
+            'next': '1',
+        })
+        self.assertEqual(len(mail.outbox), 0)
+        log = EmailLog.objects.filter(subject__icontains='Sensoryka zaakceptowana').last()
+        self.assertIsNotNone(log)
+        self.assertTrue(log.skipped)
+
+    def test_disabled_does_not_block_test_email_button(self):
+        settings_row = EmailSettings.get_solo()
+        settings_row.bulk_emails_enabled = False
+        settings_row.save()
+        resp = self.client.post('/ustawienia/maile/test/', {'test_email': 'ktos@example.com'})
+        self.assertRedirects(resp, '/ustawienia/maile/')
+        self.assertEqual(len(mail.outbox), 1)

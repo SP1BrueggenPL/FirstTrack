@@ -19,7 +19,7 @@ from django.contrib.auth.decorators import login_required
 
 from .models import (
     FirstProduction, ChecklistBefore, ChecklistAfter,
-    EmailLog, UserProfile, NotificationRecipient, DEPT_CHOICES,
+    EmailLog, EmailSettings, UserProfile, NotificationRecipient, DEPT_CHOICES,
 )
 from .forms import (
     FirstProductionForm, SAPImportForm,
@@ -1126,6 +1126,19 @@ def send_production_email(request, pk):
 
     recipients = sorted(recipients)
 
+    if not _bulk_emails_enabled():
+        EmailLog.objects.create(
+            production=prod, recipient=', '.join(recipients), subject=subject, body=body,
+            success=True, skipped=True,
+            error_msg='Wysyłka do grupy mailowej wyłączona (tryb testowy) - mail nie został wysłany.',
+        )
+        messages.info(
+            request,
+            'Wysyłka maili do grupy mailowej jest wyłączona (tryb testowy) - mail nie został wysłany. '
+            'Włącz ją w Ustawieniach (Zarządzanie → Adresy email).',
+        )
+        return redirect('production_detail', pk=pk)
+
     success = True
     error_msg = ''
     try:
@@ -1225,6 +1238,15 @@ def _notify_new_productions(productions):
     ]
     body = '\n'.join(lines)
 
+    if not _bulk_emails_enabled():
+        for p in productions:
+            EmailLog.objects.create(
+                production=p, recipient=', '.join(recipients), subject=subject, body=body,
+                success=True, skipped=True,
+                error_msg='Wysyłka do grupy mailowej wyłączona (tryb testowy) - mail nie został wysłany.',
+            )
+        return
+
     success = True
     error_msg = ''
     try:
@@ -1259,9 +1281,25 @@ def _production_team_recipients(prod):
     return sorted(recipients)
 
 
+def _bulk_emails_enabled():
+    """Globalny przełącznik (Ustawienia → Adresy email) - wyłączony w trybie
+    testowym, żeby nie zalewać prawdziwych adresów mailami przy testowaniu
+    aplikacji. Nie dotyczy przycisku "Wyślij testowy mail" (to świadoma,
+    pojedyncza akcja administratora, ma działać niezależnie od trybu)."""
+    return EmailSettings.get_solo().bulk_emails_enabled
+
+
 def _send_and_log(prod, subject, body, recipients, email_message=None):
     """Wysyła maila (plain-text albo gotowy EmailMessage z załącznikami) i zawsze
     zapisuje próbę w EmailLog, niezależnie od wyniku."""
+    if not _bulk_emails_enabled():
+        EmailLog.objects.create(
+            production=prod, recipient=', '.join(recipients), subject=subject, body=body,
+            success=True, skipped=True,
+            error_msg='Wysyłka do grupy mailowej wyłączona (tryb testowy) - mail nie został wysłany.',
+        )
+        return True
+
     success = True
     error_msg = ''
     try:
@@ -1881,6 +1919,7 @@ def notification_email_list(request):
         'form': form,
         'recipients': NotificationRecipient.objects.all(),
         'acs_configured': acs_configured,
+        'bulk_emails_enabled': _bulk_emails_enabled(),
         'recent_logs': EmailLog.objects.select_related('production').all()[:15],
     })
 
@@ -1891,6 +1930,22 @@ def notification_email_delete(request, pk):
     recipient = get_object_or_404(NotificationRecipient, pk=pk)
     recipient.delete()
     messages.success(request, f'Adres {recipient.email} został usunięty ze stałej puli.')
+    return redirect('notification_email_list')
+
+
+@login_required
+@require_POST
+def notification_email_toggle(request):
+    """Włącza/wyłącza globalną wysyłkę maili do grupy mailowej - do
+    bezpiecznego testowania aplikacji bez zalewania prawdziwych adresów
+    mailami. Nie dotyczy przycisku "Wyślij testowy mail"."""
+    email_settings = EmailSettings.get_solo()
+    email_settings.bulk_emails_enabled = not email_settings.bulk_emails_enabled
+    email_settings.save(update_fields=['bulk_emails_enabled'])
+    if email_settings.bulk_emails_enabled:
+        messages.success(request, 'Wysyłka maili do grupy mailowej została włączona.')
+    else:
+        messages.warning(request, 'Wysyłka maili do grupy mailowej została wyłączona (tryb testowy).')
     return redirect('notification_email_list')
 
 
