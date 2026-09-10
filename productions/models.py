@@ -291,7 +291,7 @@ class ChecklistAfter(models.Model):
     yield_takty = models.CharField('Takty', max_length=50, blank=True)
     lab_samples_delivered = models.CharField(
         'Czy dostarczono próbki do laboratorium?', max_length=3,
-        choices=[('tak', 'Tak'), ('nie', 'Nie')], blank=True,
+        choices=[('tak', 'Tak'), ('nie', 'Nie')], blank=True, default='nie',
     )
     uwagi       = models.TextField('Uwagi', blank=True)
 

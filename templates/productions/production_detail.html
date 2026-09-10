@@ -309,9 +309,15 @@
           {% elif etap2_ready %}
             <p class="text-muted small mb-3">Etap III zatwierdzony. Wypełnij akceptację SD i zwolnij produkcję.</p>
             <div class="d-flex gap-2 flex-wrap">
+              {% if can_release %}
               <a href="{% url 'release_production' production.pk %}" class="btn btn-success btn-sm">
                 <i class="bi bi-patch-check me-1"></i>Akceptacja SD &amp; Zwolnienie
               </a>
+              {% else %}
+              <span class="btn btn-success btn-sm disabled" title="Dostępne tylko dla działów SD i CE">
+                <i class="bi bi-lock me-1"></i>Akceptacja SD &amp; Zwolnienie
+              </span>
+              {% endif %}
               <a href="{% url 'pdf_etap3' production.pk %}" class="btn btn-outline-secondary btn-sm" target="_blank">
                 <i class="bi bi-file-earmark-pdf me-1"></i>PDF
               </a>

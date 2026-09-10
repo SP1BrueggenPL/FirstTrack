@@ -70,7 +70,7 @@
 
             {% include "productions/_checklist_row.html" with field_status=form.zero_sample_status field_uwagi=form.zero_sample_uwagi label="Czy jest próbka zerowa?" nadzor="R&D / QL" %}
             {% include "productions/_checklist_row.html" with field_status=form.production_card_status field_uwagi=form.production_card_uwagi label="Czy jest karta produkcyjna?" nadzor="R&D / QA" %}
-            {% include "productions/_checklist_row.html" with field_status=form.machine_suitable_status field_uwagi=form.machine_suitable_uwagi label="Czy maszyna produkcyjna/pakująca jest przystosowana do wymogów technologicznych?" nadzor="CE / PP" %}
+            {% include "productions/_checklist_row.html" with field_status=form.machine_suitable_status field_uwagi=form.machine_suitable_uwagi label="Czy maszyna produkcyjna/pakująca jest przystosowana do wymogów technologicznych?" nadzor="PT" %}
             {% include "productions/_checklist_row.html" with field_status=form.packaging_layout_status field_uwagi=form.packaging_layout_uwagi label="Layout opakowania" nadzor="SD" %}
             {% include "productions/_checklist_row.html" with field_status=form.collective_label_status field_uwagi=form.collective_label_uwagi label="Etykieta na karton zbiorczy" nadzor="SD" %}
             {% include "productions/_checklist_row.html" with field_status=form.date_format_status field_uwagi=form.date_format_uwagi label="Format daty" nadzor="SD" %}
