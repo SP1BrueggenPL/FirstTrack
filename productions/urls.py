@@ -39,4 +39,5 @@ urlpatterns = [
     path('ustawienia/maile/', views.notification_email_list, name='notification_email_list'),
     path('ustawienia/maile/<int:pk>/usun/', views.notification_email_delete, name='notification_email_delete'),
     path('ustawienia/maile/test/', views.notification_email_test, name='notification_email_test'),
+    path('ustawienia/maile/przelacz/', views.notification_email_toggle, name='notification_email_toggle'),
 ]

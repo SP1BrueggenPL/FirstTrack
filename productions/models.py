@@ -419,12 +419,42 @@ class EmailLog(models.Model):
     sent_at    = models.DateTimeField(auto_now_add=True)
     success    = models.BooleanField(default=True)
     error_msg  = models.TextField(blank=True)
+    # Wysyłka wyłączona w Ustawieniach (tryb testowy) - mail nie został
+    # faktycznie wysłany, tylko zalogowany do wglądu. Osobne od success, żeby
+    # nie wyglądało to w historii jak błąd wysyłki.
+    skipped    = models.BooleanField('Pominięty (tryb testowy)', default=False)
 
     class Meta:
         ordering = ['-sent_at']
 
     def __str__(self):
         return f"Mail do {self.recipient} – {self.sent_at:%Y-%m-%d %H:%M}"
+
+
+# ──────────────────────────────────────────────────────────
+# Ustawienia aplikacji (singleton)
+# ──────────────────────────────────────────────────────────
+
+class EmailSettings(models.Model):
+    """Jeden wiersz (pk=1) - globalny przełącznik wysyłki maili do grupy
+    mailowej/zespołu, żeby dało się bezpiecznie testować aplikację bez
+    zalewania prawdziwych adresów mailami."""
+    bulk_emails_enabled = models.BooleanField(
+        'Wysyłka maili do grupy mailowej włączona', default=True,
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Ustawienia email'
+        verbose_name_plural = 'Ustawienia email'
+
+    def __str__(self):
+        return 'Ustawienia email'
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
 
 
 # ──────────────────────────────────────────────────────────
