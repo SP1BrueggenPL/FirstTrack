@@ -333,6 +333,12 @@ class ChecklistAfter(models.Model):
     umk_count    = models.CharField('Liczba UMK do śluzy', max_length=50, blank=True)
     umk_uwagi    = models.TextField('Uwagi (UMK)', blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    # Sensoryka ma być uzupełniana raz i tylko raz mail o akceptacji ma być
+    # wysłany - ustawiane przy zatwierdzeniu ("next"), blokuje dalszą edycję
+    # checklisty sensorycznej. Zerowane tylko przy korekcie kierującej z
+    # powrotem do etapu sensorycznego (patrz release_production w views.py),
+    # co odblokowuje dokładnie jedno kolejne uzupełnienie.
+    sensory_completed_at = models.DateTimeField(null=True, blank=True)
     created_at   = models.DateTimeField(auto_now_add=True)
     updated_at   = models.DateTimeField(auto_now=True)
 

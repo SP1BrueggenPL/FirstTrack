@@ -666,6 +666,50 @@ def _sl_photo_field(prod):
     return ('Sprzedaż Lubeck', 'photo_sl', prod.person_sl)
 
 
+# Każdy etap ma inny zestaw ról do podpisu - dobierany razem z zespołem na
+# tej samej checkliście (patrz SENSORY_TEAM_FIELD_DEPTS/
+# PACKAGING_TEAM_FIELD_DEPTS w forms.py). Sprzedaż Lubeck jest wspólna dla
+# obu etapów, dokumentowana zdjęciem (patrz _sl_photo_field), nie tutaj.
+SENSORY_SIG_FIELDS = [
+    ('SD', 'sig_sd', 'person_sd'),
+    ('QA', 'sig_qa', 'person_qa'),
+    ('R&D', 'sig_rd', 'person_rd'),
+    ('PT', 'sig_te', 'person_te'),
+    ('CE', 'sig_ce', 'person_ce'),
+]
+PACKAGING_SIG_FIELDS = [
+    ('SD', 'sig_sd', 'person_sd'),
+    ('PP', 'sig_pp', 'person_pp'),
+    ('QA', 'sig_qa', 'person_qa'),
+    ('QL', 'sig_ql', 'person_ql'),
+    ('CE', 'sig_ce', 'person_ce'),
+]
+
+
+def _stage_sig_fields(prod, role_defs):
+    return [(role, sig_field, getattr(prod, person_field)) for role, sig_field, person_field in role_defs]
+
+
+_SENSORY_TEAM_FIELDS = ('person_sd', 'person_qa', 'person_rd', 'person_te', 'person_ce', 'person_sl')
+_PACKAGING_TEAM_FIELDS = ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce', 'person_sl')
+
+
+def _apply_team_selection(prod, form, field_names):
+    """Formularz checklisty sensoryki/pakowania wybiera zespół, ale
+    person_* żyją na FirstProduction, nie ChecklistAfter - trzeba je
+    ręcznie przepisać z cleaned_data na produkcję i zapisać osobno."""
+    changed = False
+    for field_name in field_names:
+        if field_name not in form.cleaned_data:
+            continue
+        value = form.cleaned_data[field_name]
+        if getattr(prod, field_name) != value:
+            setattr(prod, field_name, value)
+            changed = True
+    if changed:
+        prod.save(update_fields=list(field_names))
+
+
 # Etap II krok 1 – sensoryczne
 @login_required
 def checklist_after(request, pk):
@@ -677,6 +721,11 @@ def checklist_after(request, pk):
     return redirect('checklist_after_sensory', pk=pk)
 
 
+def _disable_all_fields(form):
+    for field in form.fields.values():
+        field.disabled = True
+
+
 @login_required
 def checklist_after_sensory(request, pk):
     prod = get_object_or_404(FirstProduction, pk=pk)
@@ -684,18 +733,32 @@ def checklist_after_sensory(request, pk):
         return redirect('checklist_after_packaging', pk=pk)
 
     instance = _get_or_create_checklist_after(prod)
+    sensory_locked = bool(instance.sensory_completed_at)
+
+    if request.method == 'POST' and sensory_locked:
+        messages.error(
+            request,
+            'Sensoryka została już raz uzupełniona i zaakceptowana - ponowna edycja '
+            'jest możliwa tylko po skierowaniu produkcji do korekty na tym etapie.',
+        )
+        return redirect('checklist_after_sensory', pk=pk)
+
     sensory_fs = SensoryParamFormSet(queryset=instance.sensory_params.all(), prefix='sensory')
-    form = ChecklistAfterSensoryForm(instance=instance)
+    form = ChecklistAfterSensoryForm(instance=instance, production=prod, user=request.user)
 
     if request.method == 'POST':
-        form       = ChecklistAfterSensoryForm(request.POST, request.FILES, instance=instance)
+        form       = ChecklistAfterSensoryForm(request.POST, request.FILES, instance=instance,
+                                                production=prod, user=request.user)
         sensory_fs = SensoryParamFormSet(request.POST, queryset=instance.sensory_params.all(), prefix='sensory')
         if form.is_valid() and sensory_fs.is_valid():
             ca = form.save(commit=False)
             ca.production = prod
             ca.save()
             sensory_fs.save()
+            _apply_team_selection(prod, form, _SENSORY_TEAM_FIELDS)
             if 'next' in request.POST:
+                ca.sensory_completed_at = timezone.now()
+                ca.save(update_fields=['sensory_completed_at'])
                 _notify_safely(_send_sensory_accepted_email, prod, ca)
                 if prod.is_sensory_only:
                     # Brak własnego etapu pakowania - sensoryka kończy Etap II
@@ -706,10 +769,15 @@ def checklist_after_sensory(request, pk):
                     prod.save()
                     messages.success(request, 'Parametry sensoryczne zaakceptowane. Etap III zatwierdzony.')
                     return redirect('production_detail', pk=pk)
-                messages.success(request, 'Parametry sensoryczne zapisane.')
+                messages.success(request, 'Parametry sensoryczne zaakceptowane.')
                 return redirect('checklist_after_packaging', pk=pk)
             messages.success(request, 'Parametry sensoryczne zapisane.')
             return redirect('checklist_after_sensory', pk=pk)
+
+    if sensory_locked:
+        _disable_all_fields(form)
+        for f in sensory_fs.forms:
+            _disable_all_fields(f)
 
     link_form = None
     if prod.is_sensory_only and not prod.linked_production:
@@ -720,7 +788,8 @@ def checklist_after_sensory(request, pk):
         'sensory_fs': sensory_fs,
         'production': prod,
         'checklist': instance,
-        'team_sig_fields': _all_sig_fields(prod),
+        'sensory_locked': sensory_locked,
+        'team_sig_fields': _stage_sig_fields(prod, SENSORY_SIG_FIELDS),
         'sl_field': _sl_photo_field(prod),
         'link_form': link_form,
         'step': 1,
@@ -834,14 +903,14 @@ def checklist_after_packaging(request, pk):
 
     instance = _get_or_create_checklist_after(prod)
     packaging_fs = PackagingItemFormSet(queryset=instance.packaging_items.all(), prefix='packaging')
-    form = ChecklistAfterPackagingForm(instance=instance)
+    form = ChecklistAfterPackagingForm(instance=instance, production=prod, user=request.user)
     # Dostępne też ze strony powiązanej produkcji sensorycznej ("Pakowanie
     # (powiązane zlecenie)") - next pozwala po zatwierdzeniu wrócić tam,
     # skąd użytkownik faktycznie przyszedł, a nie zawsze na tę (pakującą)
     # produkcję.
     next_url = request.GET.get('next', '')
 
-    all_sigs = _all_sig_fields(prod)
+    all_sigs = _stage_sig_fields(prod, PACKAGING_SIG_FIELDS)
     unsigned = [(role, fname, person) for role, fname, person in all_sigs
                 if person and not getattr(instance, fname)]
     sl_role, sl_fname, sl_person = _sl_photo_field(prod)
@@ -849,7 +918,8 @@ def checklist_after_packaging(request, pk):
 
     if request.method == 'POST':
         next_url = request.POST.get('next', '')
-        form         = ChecklistAfterPackagingForm(request.POST, request.FILES, instance=instance)
+        form         = ChecklistAfterPackagingForm(request.POST, request.FILES, instance=instance,
+                                                     production=prod, user=request.user)
         packaging_fs = PackagingItemFormSet(request.POST, queryset=instance.packaging_items.all(), prefix='packaging')
         if form.is_valid() and packaging_fs.is_valid():
             ca = form.save(commit=False)
@@ -859,6 +929,7 @@ def checklist_after_packaging(request, pk):
                 prod.save()
             ca.save()
             packaging_fs.save()
+            _apply_team_selection(prod, form, _PACKAGING_TEAM_FIELDS)
             # Etap pakowania nie generuje już własnego maila - jego treść
             # trafia dodatkowo do końcowego maila ze zwolnieniem (Etap III).
             messages.success(request, 'Etap III zatwierdzony.' if 'complete' in request.POST else 'Checklista pakowania zapisana.')
@@ -935,6 +1006,10 @@ def release_production(request, pk):
                 reset_ca = _get_or_create_checklist_after(reset_prod)
                 if stage == 'sensory':
                     reset_ca.sensory_params.all().update(status='', uwagi='', korekta='', kto='', kiedy='')
+                    # Odblokowuje dokładnie jedno kolejne uzupełnienie
+                    # sensoryki - po nim checklist_after_sensory zablokuje
+                    # edycję ponownie (patrz sensory_completed_at).
+                    reset_ca.sensory_completed_at = None
                 elif stage == 'packaging':
                     reset_ca.packaging_items.all().update(status='', uwagi='', korekta='', kto='', kiedy='')
                 reset_ca.completed_at = None
@@ -950,10 +1025,10 @@ def release_production(request, pk):
                 # wcale niekorygowana strona nie zostałaby zatwierdzona
                 # jeszcze raz.
                 if reset_ca.pk == ca.pk:
-                    ca.save(update_fields=['final_acceptance', 'completed_at'])
+                    ca.save(update_fields=['final_acceptance', 'completed_at', 'sensory_completed_at'])
                 else:
                     ca.save(update_fields=['final_acceptance'])
-                    reset_ca.save(update_fields=['completed_at', 'final_acceptance'])
+                    reset_ca.save(update_fields=['completed_at', 'final_acceptance', 'sensory_completed_at'])
                 prod.status = 'etap2'
                 prod.save()
                 if reset_prod.pk != prod.pk:

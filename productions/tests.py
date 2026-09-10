@@ -464,6 +464,8 @@ class TeamPhotoTests(TestCase):
             'sensory-TOTAL_FORMS': str(sensory_params.count()),
             'sensory-INITIAL_FORMS': str(sensory_params.count()),
             **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'person_rd': str(self.rd.pk),
+            'person_sl': str(self.sl.pk),
             'sig_rd': 'data:image/png;base64,fakesignature',
             'photo_sl': photo,
             'next': '1',
@@ -517,8 +519,10 @@ class TeamPhotoTests(TestCase):
         self.assertEqual(log.recipient, long_recipient_list)
 
     def test_sprzedaz_lubeck_department_selectable_and_recipient(self):
+        # SL jest wybierana na checkliście sensoryki (przez dział SD), nie
+        # przy tworzeniu produkcji.
         sl_user = _make_user('sluser2', 'SL', email='sl2@example.com')
-        resp = self.client.get('/nowa/')
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
         self.assertContains(resp, 'Sluser2 SL')
 
         prod = FirstProduction.objects.create(
@@ -573,6 +577,7 @@ class ReleaseDecisionWorkflowTests(TestCase):
             'sensory-TOTAL_FORMS': str(sensory_params.count()),
             'sensory-INITIAL_FORMS': str(sensory_params.count()),
             **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'person_sd': str(self.sd.pk),
             'next': '1',
         })
         packaging_items = self.prod.checklist_after.packaging_items.all()
@@ -580,6 +585,7 @@ class ReleaseDecisionWorkflowTests(TestCase):
             'packaging-TOTAL_FORMS': str(packaging_items.count()),
             'packaging-INITIAL_FORMS': str(packaging_items.count()),
             **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            'person_sd': str(self.sd.pk),
             'umk_count': '42',
             'complete': '1',
         })
@@ -1485,3 +1491,193 @@ class StageRelabelTests(TestCase):
     def test_checklist_after_sensory_is_now_etap_iii(self):
         resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
         self.assertContains(resp, 'Etap III – Parametry sensoryczne')
+
+
+class TeamSelectionMovedToChecklistTests(TestCase):
+    """Zespół nie jest już wybierany przy edycji produkcji - jest wybierany
+    bezpośrednio na checkliście sensoryki (SD, QA, R&D, PT, CE, Sprzedaż
+    Lubeck) i pakowania (SD, PP, QA, QL, CE, Sprzedaż Lubeck), przez osobę z
+    odpowiedniego działu (Sprzedaż Lubeck - przez SD)."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.qa = _make_user('qauser', 'QA')
+        self.rd = _make_user('rduser', 'RD')
+        self.pt = _make_user('ptuser', 'TE')
+        self.ce = _make_user('ceuser', 'CE')
+        self.sl = _make_user('sluser', 'SL')
+        self.pp = _make_user('ppuser', 'PP')
+        self.ql = _make_user('qluser', 'QL')
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full')
+
+    def test_production_edit_form_has_no_team_section(self):
+        self.client.force_login(self.sd)
+        resp = self.client.get(f'/{self.prod.pk}/edytuj/')
+        self.assertNotContains(resp, 'name="person_rd"')
+        self.assertNotContains(resp, 'name="person_sl"')
+
+    def test_sensory_checklist_shows_team_picker_with_correct_roles(self):
+        self.client.force_login(self.sd)
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        for field in ('person_sd', 'person_qa', 'person_rd', 'person_te', 'person_ce', 'person_sl'):
+            self.assertContains(resp, f'name="{field}"')
+        self.assertNotContains(resp, 'name="person_pp"')
+        self.assertNotContains(resp, 'name="person_ql"')
+
+    def test_packaging_checklist_shows_team_picker_with_correct_roles(self):
+        self.client.force_login(self.sd)
+        resp = self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
+        for field in ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce', 'person_sl'):
+            self.assertContains(resp, f'name="{field}"')
+        self.assertNotContains(resp, 'name="person_rd"')
+        self.assertNotContains(resp, 'name="person_te"')
+
+    def _sensory_post(self, extra):
+        self.prod.refresh_from_db()
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.prod.refresh_from_db()
+        sensory_params = self.prod.checklist_after.sensory_params.all()
+        data = {
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'save': '1',
+        }
+        data.update(extra)
+        return self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', data)
+
+    def test_rd_user_can_pick_only_rd_role(self):
+        self.client.force_login(self.rd)
+        self._sensory_post({'person_rd': str(self.rd.pk), 'person_sd': str(self.sd.pk)})
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.person_rd_id, self.rd.pk)
+        self.assertIsNone(self.prod.person_sd_id)  # zablokowane - RD nie może wybrać SD
+
+    def test_sd_user_can_pick_sl_role(self):
+        self.client.force_login(self.sd)
+        self._sensory_post({'person_sl': str(self.sl.pk)})
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.person_sl_id, self.sl.pk)
+
+    def test_qa_user_cannot_pick_sl_role(self):
+        self.client.force_login(self.qa)
+        self._sensory_post({'person_sl': str(self.sl.pk), 'person_qa': str(self.qa.pk)})
+        self.prod.refresh_from_db()
+        self.assertIsNone(self.prod.person_sl_id)  # zablokowane - tylko SD wybiera SL
+        self.assertEqual(self.prod.person_qa_id, self.qa.pk)
+
+    def test_packaging_prefills_sd_qa_ce_from_sensory(self):
+        # Każda rola jest wybierana tylko przez osobę z tego działu - SD nie
+        # może ustawić QA/CE za nich, więc symulujemy trzy osobne osoby
+        # zapisujące checklistę sensoryczną, każda swoją rolę.
+        self.client.force_login(self.sd)
+        self._sensory_post({'person_sd': str(self.sd.pk)})
+        self.client.force_login(self.qa)
+        self._sensory_post({'person_qa': str(self.qa.pk)})
+        self.client.force_login(self.ce)
+        self._sensory_post({'person_ce': str(self.ce.pk)})
+
+        self.client.force_login(self.sd)
+        resp = self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
+        self.assertContains(resp, f'<option value="{self.sd.pk}" selected>')
+        self.assertContains(resp, f'<option value="{self.qa.pk}" selected>')
+        self.assertContains(resp, f'<option value="{self.ce.pk}" selected>')
+
+    def test_acceptor_field_locked_to_sd_and_ce(self):
+        rd_user = self.rd
+        self.client.force_login(rd_user)
+        resp = self.client.get(f'/{self.prod.pk}/edytuj/')
+        self.assertTrue(resp.context['form'].fields['acceptor'].disabled)
+
+        self.client.force_login(self.sd)
+        resp = self.client.get(f'/{self.prod.pk}/edytuj/')
+        self.assertFalse(resp.context['form'].fields['acceptor'].disabled)
+
+        self.client.force_login(self.ce)
+        resp = self.client.get(f'/{self.prod.pk}/edytuj/')
+        self.assertFalse(resp.context['form'].fields['acceptor'].disabled)
+
+
+class SensoryLockAfterFirstCompletionTests(TestCase):
+    """Sensoryka ma być uzupełniana raz i tylko raz ma być wysyłany mail -
+    po zatwierdzeniu ("next") checklista jest zablokowana, chyba że korekta
+    z Etapu IV wraca do etapu sensorycznego (odblokowuje dokładnie raz)."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full', person_sd=self.sd)
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+
+    def _sensory_params(self):
+        self.prod.refresh_from_db()
+        return self.prod.checklist_after.sensory_params.all()
+
+    def _submit_next(self):
+        sensory_params = self._sensory_params()
+        return self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'person_sd': str(self.sd.pk),
+            'next': '1',
+        })
+
+    def test_first_submission_sets_lock_and_sends_one_email(self):
+        self._submit_next()
+        ca = self.prod.checklist_after
+        ca.refresh_from_db()
+        self.assertIsNotNone(ca.sensory_completed_at)
+        sent = [m for m in mail.outbox if 'Sensoryka zaakceptowana' in m.subject]
+        self.assertEqual(len(sent), 1)
+
+    def test_second_submission_is_blocked_and_no_extra_email(self):
+        self._submit_next()
+        mail.outbox.clear()
+        resp = self._submit_next()
+        self.assertRedirects(resp, f'/{self.prod.pk}/etap2/sensoryczne/')
+        sent = [m for m in mail.outbox if 'Sensoryka zaakceptowana' in m.subject]
+        self.assertEqual(len(sent), 0)
+
+    def test_locked_page_renders_disabled_fields(self):
+        self._submit_next()
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.assertContains(resp, 'zablokowana')
+        self.assertTrue(resp.context['form'].fields['uwagi'].disabled)
+        self.assertTrue(resp.context['sensory_fs'].forms[0].fields['status'].disabled)
+        self.assertNotContains(resp, 'Zatwierdź sensorykę')
+
+    def test_correction_to_sensory_unlocks_exactly_once(self):
+        self._submit_next()
+        # przejdź przez pakowanie do etapu IV
+        self.prod.refresh_from_db()
+        packaging_items = self.prod.checklist_after.packaging_items.all()
+        self.client.post(f'/{self.prod.pk}/etap2/pakowanie/', {
+            'packaging-TOTAL_FORMS': str(packaging_items.count()),
+            'packaging-INITIAL_FORMS': str(packaging_items.count()),
+            **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            'complete': '1',
+        })
+        self.client.post(f'/{self.prod.pk}/etap3/', {
+            'decision': 'correction',
+            'correction_comment': 'Popraw sensorykę',
+            'correction_return_stage': 'sensory',
+            'acceptance_signature': '',
+        })
+        ca = self.prod.checklist_after
+        ca.refresh_from_db()
+        self.assertIsNone(ca.sensory_completed_at)
+
+        # odblokowane raz - da się uzupełnić i zatwierdzić ponownie
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.assertNotContains(resp, 'zablokowana')
+        self._submit_next()
+        ca.refresh_from_db()
+        self.assertIsNotNone(ca.sensory_completed_at)
+
+        # a teraz zablokowane znowu
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.assertContains(resp, 'zablokowana')
