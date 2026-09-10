@@ -489,6 +489,7 @@ def production_detail(request, pk):
         'checklist_after':  checklist_after,
         'checklist_confirmations': confirmations,
         'etap2_ready': _etap2_fully_done(prod),
+        'can_release': _can_release(request.user),
         'gallery_photos': gallery_photos,
     })
 
@@ -979,9 +980,25 @@ def _linked_target_for_stage(prod, stage):
     return prod
 
 
+def _can_release(user):
+    """Etap IV (akceptacja SD, zwolnienie do sprzedaży) jest dostępny tylko
+    dla działów SD i CE - grupy, która faktycznie zwalnia produkcję."""
+    if user.is_staff:
+        return True
+    dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
+    return dept in ('SD', 'CE')
+
+
 @login_required
 def release_production(request, pk):
-    prod     = get_object_or_404(FirstProduction, pk=pk)
+    prod = get_object_or_404(FirstProduction, pk=pk)
+    if not _can_release(request.user):
+        messages.error(
+            request,
+            'Etap IV (Akceptacja SD i zwolnienie do sprzedaży) jest dostępny '
+            'tylko dla działów SD i CE.',
+        )
+        return redirect('production_detail', pk=pk)
     instance = _get_or_create_checklist_after(prod)
     if not _etap2_fully_done(prod):
         messages.error(
@@ -1905,6 +1922,9 @@ def user_chip(request, pk):
 
 @login_required
 def notification_email_list(request):
+    if not request.user.is_staff:
+        messages.error(request, 'Brak uprawnień do panelu Zarządzanie - dostępny tylko dla roli Admin.')
+        return redirect('dashboard')
     form = NotificationRecipientForm()
     if request.method == 'POST':
         form = NotificationRecipientForm(request.POST)
@@ -1927,6 +1947,9 @@ def notification_email_list(request):
 @login_required
 @require_POST
 def notification_email_delete(request, pk):
+    if not request.user.is_staff:
+        messages.error(request, 'Brak uprawnień do panelu Zarządzanie - dostępny tylko dla roli Admin.')
+        return redirect('dashboard')
     recipient = get_object_or_404(NotificationRecipient, pk=pk)
     recipient.delete()
     messages.success(request, f'Adres {recipient.email} został usunięty ze stałej puli.')
@@ -1939,6 +1962,9 @@ def notification_email_toggle(request):
     """Włącza/wyłącza globalną wysyłkę maili do grupy mailowej - do
     bezpiecznego testowania aplikacji bez zalewania prawdziwych adresów
     mailami. Nie dotyczy przycisku "Wyślij testowy mail"."""
+    if not request.user.is_staff:
+        messages.error(request, 'Brak uprawnień do panelu Zarządzanie - dostępny tylko dla roli Admin.')
+        return redirect('dashboard')
     email_settings = EmailSettings.get_solo()
     email_settings.bulk_emails_enabled = not email_settings.bulk_emails_enabled
     email_settings.save(update_fields=['bulk_emails_enabled'])
@@ -1954,6 +1980,9 @@ def notification_email_toggle(request):
 def notification_email_test(request):
     """Wysyłka testowego maila – do zweryfikowania konfiguracji wysyłki
     (Azure Communication Services albo plik lokalny w trybie dev)."""
+    if not request.user.is_staff:
+        messages.error(request, 'Brak uprawnień do panelu Zarządzanie - dostępny tylko dla roli Admin.')
+        return redirect('dashboard')
     test_email = request.POST.get('test_email', '').strip()
     if test_email:
         recipients = [test_email]

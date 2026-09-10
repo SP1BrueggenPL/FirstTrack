@@ -429,6 +429,14 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
     person_te = _person_field('TE', 'PT')
     person_ce = _person_field('CE', 'CE')
     person_sl = _person_field('SL', 'Sprzedaż Lubeck')
+    # Pole zadeklarowane jawnie (nie przez ModelForm) - CharField z choices i
+    # blank=True dostałoby automatycznie doklejoną pustą opcję ("- Select an
+    # option -") w RadioSelect, mimo że ma tylko dwie sensowne wartości.
+    lab_samples_delivered = forms.ChoiceField(
+        choices=[('tak', 'Tak'), ('nie', 'Nie')], required=False,
+        label='Czy dostarczono próbki do laboratorium?',
+        widget=forms.RadioSelect(attrs={'class': 'status-radio'}),
+    )
 
     def __init__(self, *args, production=None, user=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -456,7 +464,6 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
             'photo_sl':       _SL_PHOTO_WIDGET,
             'yield_kg':       forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'kg/h'}),
             'yield_takty':    forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'takty'}),
-            'lab_samples_delivered': forms.RadioSelect(attrs={'class': 'status-radio'}),
             'uwagi':          forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 3}),
         }
 

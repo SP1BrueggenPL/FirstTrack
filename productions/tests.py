@@ -1690,6 +1690,8 @@ class BulkEmailToggleTests(TestCase):
 
     def setUp(self):
         self.sd = _make_user('sduser', 'SD')
+        self.sd.is_staff = True
+        self.sd.save()
         self.client.force_login(self.sd)
         self.prod = FirstProduction.objects.create(
             sap_zlecenie='1', product_name='X', scope='full', person_sd=self.sd)
@@ -1752,3 +1754,152 @@ class BulkEmailToggleTests(TestCase):
         resp = self.client.post('/ustawienia/maile/test/', {'test_email': 'ktos@example.com'})
         self.assertRedirects(resp, '/ustawienia/maile/')
         self.assertEqual(len(mail.outbox), 1)
+
+
+class LabSamplesDeliveredDefaultTests(TestCase):
+    """Pole "Czy dostarczono próbki do laboratorium?" nie ma pokazywać pustej
+    opcji ("- Select an option -") - tylko Tak/Nie, domyślnie zaznaczone Nie."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full', person_sd=self.sd)
+
+    def test_new_checklist_defaults_to_nie(self):
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.checklist_after.lab_samples_delivered, 'nie')
+
+    def test_radio_has_no_blank_option(self):
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.assertNotContains(resp, 'Select an option')
+        self.assertContains(resp, 'value="tak"')
+        self.assertContains(resp, 'value="nie"')
+
+    def test_nie_is_preselected_by_default(self):
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        form = resp.context['form']
+        self.assertEqual(form.initial.get('lab_samples_delivered') or form['lab_samples_delivered'].value(), 'nie')
+
+
+class ZarzadzanieAdminOnlyTests(TestCase):
+    """Cała sekcja "Zarządzanie" (Użytkownicy, Adresy email) jest dostępna
+    tylko dla roli Admin (is_staff)."""
+
+    def setUp(self):
+        self.admin = _make_user('adminuser', 'SD')
+        self.admin.is_staff = True
+        self.admin.save()
+        self.other = _make_user('other', 'QA')
+
+    def test_non_admin_cannot_reach_notification_email_views(self):
+        self.client.force_login(self.other)
+        for path in ('/ustawienia/maile/', '/ustawienia/maile/przelacz/', '/ustawienia/maile/test/'):
+            resp = self.client.post(path) if path != '/ustawienia/maile/' else self.client.get(path)
+            self.assertEqual(resp.status_code, 302, f'{path} should redirect for non-admin')
+
+    def test_non_admin_does_not_see_zarzadzanie_nav(self):
+        self.client.force_login(self.other)
+        resp = self.client.get('/')
+        self.assertNotContains(resp, 'Adresy email')
+        self.assertNotContains(resp, 'Admin panel')
+
+    def test_admin_sees_zarzadzanie_nav(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get('/')
+        self.assertContains(resp, 'Adresy email')
+        self.assertContains(resp, 'Admin panel')
+
+    def test_admin_can_reach_notification_email_list(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get('/ustawienia/maile/')
+        self.assertEqual(resp.status_code, 200)
+
+
+class ReleaseProductionRestrictedToSdCeTests(TestCase):
+    """Etap IV (Akceptacja SD i zwolnienie do sprzedaży) - tylko dla działów
+    SD i CE, żeby nikt poza grupą zwalniającą nie mógł tam wejść/zatwierdzić."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.ce = _make_user('ceuser', 'CE')
+        self.rd = _make_user('rduser', 'RD')
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full', person_sd=self.sd)
+        self.client.force_login(self.sd)
+        self.client.post(f'/{self.prod.pk}/etap1/', {'complete': '1'})
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.prod.refresh_from_db()
+        sensory_params = self.prod.checklist_after.sensory_params.all()
+        self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'person_sd': str(self.sd.pk),
+            'next': '1',
+        })
+        packaging_items = self.prod.checklist_after.packaging_items.all()
+        self.client.post(f'/{self.prod.pk}/etap2/pakowanie/', {
+            'packaging-TOTAL_FORMS': str(packaging_items.count()),
+            'packaging-INITIAL_FORMS': str(packaging_items.count()),
+            **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            'person_sd': str(self.sd.pk),
+            'complete': '1',
+        })
+
+    def test_rd_cannot_reach_release_view(self):
+        self.client.force_login(self.rd)
+        resp = self.client.get(f'/{self.prod.pk}/etap3/')
+        self.assertRedirects(resp, f'/{self.prod.pk}/')
+
+        resp = self.client.post(f'/{self.prod.pk}/etap3/', {
+            'decision': 'accept', 'acceptance_signature': '',
+        })
+        self.assertRedirects(resp, f'/{self.prod.pk}/')
+        self.prod.refresh_from_db()
+        self.assertNotEqual(self.prod.status, 'zwolniona')
+
+    def test_sd_can_reach_release_view(self):
+        self.client.force_login(self.sd)
+        resp = self.client.get(f'/{self.prod.pk}/etap3/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_ce_can_reach_release_view(self):
+        self.client.force_login(self.ce)
+        resp = self.client.get(f'/{self.prod.pk}/etap3/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_release_button_hidden_from_rd_on_production_detail(self):
+        self.client.force_login(self.rd)
+        resp = self.client.get(f'/{self.prod.pk}/')
+        self.assertNotContains(resp, f'href="/{self.prod.pk}/etap3/"')
+
+    def test_release_button_shown_to_sd_on_production_detail(self):
+        self.client.force_login(self.sd)
+        resp = self.client.get(f'/{self.prod.pk}/')
+        self.assertContains(resp, f'href="/{self.prod.pk}/etap3/"')
+
+
+class MachineSuitableNadzorLabelTests(TestCase):
+    """Wiersz "Czy maszyna produkcyjna/pakująca jest przystosowana..." ma
+    pokazywać PT jako dział nadzorujący (nie CE/PP) - zarówno w checkliście
+    jak i w wygenerowanym PDF-ie Etapu I."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full')
+
+    def test_checklist_before_shows_pt_not_ce_pp(self):
+        resp = self.client.get(f'/{self.prod.pk}/etap1/')
+        self.assertNotContains(resp, 'CE / PP')
+
+    def test_pdf_etap1_shows_pt_not_ce_pp(self):
+        # Odpowiedź to binarny PDF (application/pdf), nie HTML - assertContains
+        # próbowałby dekodować jako UTF-8 i wywalał się na losowych bajtach.
+        resp = self.client.get(f'/{self.prod.pk}/pdf/etap1/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn(b'CE / PP', resp.content)

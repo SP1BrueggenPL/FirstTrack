@@ -427,17 +427,16 @@
         </li>
       </ul>
 
+      {% if request.user.is_staff %}
       <hr>
       <span class="nav-label">Zarządzanie</span>
       <ul class="nav flex-column">
-        {% if request.user.is_staff %}
         <li>
           <a class="nav-link {% if request.resolver_match.url_name in 'user_list,user_create,user_edit,user_chip' %}active{% endif %}"
              href="{% url 'user_list' %}">
             <i class="bi bi-people"></i> Użytkownicy
           </a>
         </li>
-        {% endif %}
         <li>
           <a class="nav-link {% if request.resolver_match.url_name in 'notification_email_list,notification_email_delete' %}active{% endif %}"
              href="{% url 'notification_email_list' %}">
@@ -450,6 +449,7 @@
           </a>
         </li>
       </ul>
+      {% endif %}
 
       <hr>
       <div class="px-2 pb-2">
