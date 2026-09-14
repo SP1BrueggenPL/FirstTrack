@@ -1,4 +1,6 @@
-document.querySelectorAll('.team-sig-canvas').forEach(function(canvas) {
+function initSigCanvas(canvas) {
+  if (canvas.dataset.sigInit) return;
+  canvas.dataset.sigInit = '1';
   const fieldName = canvas.dataset.field;
   const hiddenInput = document.querySelector('input[name="' + fieldName + '"]');
   const ctx = canvas.getContext('2d');
@@ -33,6 +35,38 @@ document.querySelectorAll('.team-sig-canvas').forEach(function(canvas) {
   canvas.addEventListener('touchstart', e => { e.preventDefault(); drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }, { passive: false });
   canvas.addEventListener('touchmove',  e => { if (!drawing) return; e.preventDefault(); const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); }, { passive: false });
   canvas.addEventListener('touchend',   () => { drawing = false; if (hiddenInput) hiddenInput.value = canvas.toDataURL('image/png'); });
+}
+
+document.querySelectorAll('.team-sig-canvas').forEach(function(canvas) {
+  // Płótno w ukrytym (jeszcze nieprzypisanym) polu podpisu ma zerowy
+  // rozmiar (getBoundingClientRect na elemencie z [hidden] zwraca 0x0) -
+  // inicjalizacja takiego płótna jest odłożona do momentu, gdy stanie się
+  // widoczne (patrz sync() niżej).
+  if (!canvas.closest('[hidden]')) initSigCanvas(canvas);
+});
+
+// Pole podpisu ma się pojawić od razu po wybraniu osoby w "Zespole", bez
+// konieczności zapisania formularza - synchronizujemy widoczność i etykietę
+// z aktualnie wybraną wartością pola wyboru (a nie tylko z tym, co było
+// zapisane w bazie przy wczytaniu strony).
+document.querySelectorAll('.team-sig-box[data-person-field]').forEach(function(box) {
+  const select = document.getElementById('id_' + box.dataset.personField);
+  const nameEl = box.querySelector('.team-sig-name');
+  if (!select) return;
+  function sync() {
+    const hasPerson = !!select.value;
+    box.hidden = !hasPerson;
+    if (nameEl) {
+      const opt = select.options[select.selectedIndex];
+      nameEl.textContent = hasPerson ? (box.dataset.role + ' – ' + opt.text) : box.dataset.role;
+    }
+    if (hasPerson) {
+      const canvas = box.querySelector('.team-sig-canvas');
+      if (canvas) initSigCanvas(canvas);
+    }
+  }
+  select.addEventListener('change', sync);
+  sync();
 });
 
 document.querySelectorAll('.sig-clear-btn').forEach(function(btn) {
