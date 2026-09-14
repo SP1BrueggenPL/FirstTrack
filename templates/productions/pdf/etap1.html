@@ -111,7 +111,7 @@
     <td class="check">{% if cb and cb.zero_sample_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
     <td class="check">{% if cb and cb.zero_sample_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
     <td class="uwagi">{% if cb %}{{ cb.zero_sample_uwagi|default:"" }}{% endif %}</td>
-    <td class="nadzor">R&amp;D / QL w przypadku przenoszenia między zakładami</td>
+    <td class="nadzor">R&amp;D / QL</td>
   </tr>
   <tr>
     <td class="item">Czy jest karta produkcyjna?</td>
@@ -119,7 +119,7 @@
     <td class="check">{% if cb and cb.production_card_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
     <td class="check">{% if cb and cb.production_card_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
     <td class="uwagi">{% if cb %}{{ cb.production_card_uwagi|default:"" }}{% endif %}</td>
-    <td class="nadzor">R&amp;D / QA w przypadku mieszanek</td>
+    <td class="nadzor">R&amp;D / QA</td>
   </tr>
   <tr>
     <td class="item">Czy maszyna produkcyjna/pakująca jest przystosowana do wymogów technologicznych?</td>

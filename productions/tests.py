@@ -1903,3 +1903,118 @@ class MachineSuitableNadzorLabelTests(TestCase):
         resp = self.client.get(f'/{self.prod.pk}/pdf/etap1/')
         self.assertEqual(resp.status_code, 200)
         self.assertNotIn(b'CE / PP', resp.content)
+
+    def test_pdf_etap1_nadzor_labels_have_no_explanatory_text(self):
+        # Kolumna Nadzór ma pokazywać tylko skróty działów ("R&D / QL",
+        # "R&D / QA"), bez dopisków tłumaczących kiedy dany dział nadzoruje.
+        resp = self.client.get(f'/{self.prod.pk}/pdf/etap1/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn('w przypadku przenoszenia między zakładami'.encode(), resp.content)
+        self.assertNotIn('w przypadku mieszanek'.encode(), resp.content)
+
+
+class MachineSuitableRowLockDeptCodeTests(TestCase):
+    """Dział nadzorujący wiersz "Czy maszyna..." to PT, którego wewnętrzny
+    kod w DEPT_CHOICES to 'TE' (nie 'PT') - blokada edycji wiersza musi
+    porównywać się do właściwego kodu, inaczej prawdziwy użytkownik działu
+    PT nigdy nie mógłby edytować własnego wiersza."""
+
+    def setUp(self):
+        self.pt = _make_user('ptuser', 'TE')
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full')
+
+    def test_pt_department_user_can_edit_machine_suitable_row(self):
+        self.client.force_login(self.pt)
+        resp = self.client.get(f'/{self.prod.pk}/etap1/')
+        self.assertFalse(resp.context['form'].fields['machine_suitable_status'].disabled)
+
+    def test_pt_department_user_edit_is_saved(self):
+        self.client.force_login(self.pt)
+        resp = self.client.post(f'/{self.prod.pk}/etap1/', {
+            'save': '1', 'machine_suitable_status': 'tak',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        cb = self.prod.checklist_before
+        self.assertEqual(cb.machine_suitable_status, 'tak')
+
+
+class ChecklistBeforeStaffMultiDeptConfirmationTests(TestCase):
+    """Administrator (is_staff) nie ma własnego działu nadzorującego, ale
+    dzięki obejściu blokady wierszy może w jednym zapisie wypełnić wiersze
+    kilku działów - potwierdzenia mają być zaciągnięte dla każdego z nich
+    (nie pozostawać puste, bo admin sam nie należy do żadnego działu)."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username='admin', password='x', first_name='Ad', last_name='Min',
+            email='admin@example.com', is_staff=True)
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full')
+
+    def test_staff_save_stamps_confirmations_for_all_filled_departments(self):
+        self.client.force_login(self.admin)
+        resp = self.client.post(f'/{self.prod.pk}/etap1/', {
+            'save': '1',
+            'order_updated_status': 'tak',     # SC
+            'zero_sample_status': 'tak',       # RD, QL
+            'machine_suitable_status': 'tak',  # TE (PT)
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        cb = self.prod.checklist_before
+        self.assertEqual(cb.confirm_sc, self.admin.get_full_name())
+        self.assertEqual(cb.confirm_rd, self.admin.get_full_name())
+        self.assertEqual(cb.confirm_ql, self.admin.get_full_name())
+        self.assertEqual(cb.confirm_te, self.admin.get_full_name())
+        # Dział, którego wiersz nie został wypełniony w tym zapisie, nie
+        # dostaje potwierdzenia.
+        self.assertEqual(cb.confirm_sd, '')
+
+    def test_staff_save_does_not_overwrite_existing_confirmation(self):
+        self.client.force_login(self.admin)
+        self.client.post(f'/{self.prod.pk}/etap1/', {
+            'save': '1', 'order_updated_status': 'tak',
+        })
+        cb = self.prod.checklist_before
+        self.assertEqual(cb.confirm_sc, self.admin.get_full_name())
+
+        other = User.objects.create_user(
+            username='other', password='x', first_name='Ot', last_name='Her',
+            email='other@example.com', is_staff=True)
+        self.client.force_login(other)
+        self.client.post(f'/{self.prod.pk}/etap1/', {
+            'save': '1', 'order_updated_status': 'nie',
+        })
+        cb.refresh_from_db()
+        self.assertEqual(cb.confirm_sc, self.admin.get_full_name())
+
+
+class SignatureBoxLiveRevealMarkupTests(TestCase):
+    """Miejsce na podpis renderuje się zawsze dla każdej roli zespołu -
+    ukryte atrybutem hidden dopóki nikt nie jest jeszcze wybrany. Widoczność
+    i etykieta są potem dociągane przez JS na podstawie aktualnie wybranej
+    osoby w "Zespole", żeby podpis pojawiał się od razu po wyborze, a nie
+    dopiero po zapisaniu formularza (patrz _sig_canvas_js.html)."""
+
+    def setUp(self):
+        self.sd = _make_user('sduser', 'SD')
+        self.client.force_login(self.sd)
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full')
+
+    def test_sensory_renders_hidden_box_for_unassigned_roles(self):
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.assertContains(resp, 'data-person-field="person_sd"')
+        self.assertContains(resp, 'data-person-field="person_rd"')
+        self.assertContains(resp, 'class="col-md-4 col-lg-3 team-sig-box" data-role="SD" data-person-field="person_sd" hidden')
+
+    def test_sensory_box_not_hidden_when_person_already_assigned(self):
+        self.prod.person_sd = self.sd
+        self.prod.save(update_fields=['person_sd'])
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.assertContains(resp, 'class="col-md-4 col-lg-3 team-sig-box" data-role="SD" data-person-field="person_sd" >')
+
+    def test_packaging_renders_hidden_box_for_unassigned_roles(self):
+        resp = self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
+        self.assertContains(resp, 'data-person-field="person_pp"')
+        self.assertContains(resp, 'class="col-md-4 col-lg-3 team-sig-box" data-role="PP" data-person-field="person_pp" hidden')

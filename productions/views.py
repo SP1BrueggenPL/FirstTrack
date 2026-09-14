@@ -509,7 +509,7 @@ CHECKLIST_BEFORE_ROW_FIELDS = [
     (['analysis_form_status', 'analysis_form_version'], ['QA']),
     (['zero_sample_status', 'zero_sample_uwagi'], ['RD', 'QL']),
     (['production_card_status', 'production_card_uwagi'], ['RD', 'QA']),
-    (['machine_suitable_status', 'machine_suitable_uwagi'], ['PT']),
+    (['machine_suitable_status', 'machine_suitable_uwagi'], ['TE']),
     (['packaging_layout_status', 'packaging_layout_uwagi'], ['SD']),
     (['collective_label_status', 'collective_label_uwagi'], ['SD']),
     (['date_format_status', 'date_format_uwagi'], ['SD']),
@@ -542,11 +542,35 @@ CHECKLIST_BEFORE_CONFIRM_DEPTS = {
     'QA': 'confirm_qa', 'QL': 'confirm_ql', 'TE': 'confirm_te', 'PP': 'confirm_pp',
 }
 
+# Dla każdego działu - pola "status" wierszy, za które ten dział odpowiada
+# (patrz CHECKLIST_BEFORE_ROW_FIELDS), używane wyłącznie do wykrycia, czy
+# administrator (patrz niżej) faktycznie wypełnił dany wiersz w tym zapisie.
+CHECKLIST_BEFORE_DEPT_STATUS_FIELDS = {}
+for _field_names, _allowed_depts in CHECKLIST_BEFORE_ROW_FIELDS:
+    for _dept in _allowed_depts:
+        CHECKLIST_BEFORE_DEPT_STATUS_FIELDS.setdefault(_dept, []).append(_field_names[0])
+
 
 def _stamp_checklist_before_confirmation(cb, user):
     """Osoba, która zapisuje checklistę, "potwierdza" swój dział - imię i
     nazwisko trafia automatycznie do pola confirm_<dział> (bez ręcznego
-    wpisywania), pokazywane potem w PDF Etapu I."""
+    wpisywania), pokazywane potem w PDF Etapu I.
+
+    Administratorzy (is_staff) nie mają własnego działu nadzorującego, a
+    dzięki obejściu blokady wierszy (patrz _lock_checklist_before_rows_to_
+    department) mogą w jednym zapisie wypełnić wiersze kilku działów - dla
+    nich potwierdzenie jest więc zaciągane dla każdego działu, którego
+    wiersz(e) mają już wypełnioną wartość, a które nie mają jeszcze
+    potwierdzenia (zamiast pozostawać puste, bo admin nie należy do
+    żadnego z nich)."""
+    if user.is_staff:
+        for confirm_dept, field_name in CHECKLIST_BEFORE_CONFIRM_DEPTS.items():
+            if getattr(cb, field_name):
+                continue
+            status_fields = CHECKLIST_BEFORE_DEPT_STATUS_FIELDS.get(confirm_dept, [])
+            if any(getattr(cb, f, '') for f in status_fields):
+                setattr(cb, field_name, user.get_full_name() or user.username)
+        return
     dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
     field_name = CHECKLIST_BEFORE_CONFIRM_DEPTS.get(dept)
     if field_name:
@@ -688,7 +712,8 @@ PACKAGING_SIG_FIELDS = [
 
 
 def _stage_sig_fields(prod, role_defs):
-    return [(role, sig_field, getattr(prod, person_field)) for role, sig_field, person_field in role_defs]
+    return [(role, sig_field, person_field, getattr(prod, person_field))
+            for role, sig_field, person_field in role_defs]
 
 
 _SENSORY_TEAM_FIELDS = ('person_sd', 'person_qa', 'person_rd', 'person_te', 'person_ce', 'person_sl')
@@ -912,8 +937,12 @@ def checklist_after_packaging(request, pk):
     next_url = request.GET.get('next', '')
 
     all_sigs = _stage_sig_fields(prod, PACKAGING_SIG_FIELDS)
-    unsigned = [(role, fname, person) for role, fname, person in all_sigs
-                if person and not getattr(instance, fname)]
+    # Wiersz zostaje w liście dopóki dany dział jeszcze się nie podpisał -
+    # nawet zanim ktokolwiek wybierze osobę w "Zespole" (pole podpisu ma się
+    # pojawić od razu po wyborze, patrz JS w _sig_canvas_js.html, a nie
+    # dopiero po zapisaniu formularza).
+    unsigned = [(role, fname, pfield, person) for role, fname, pfield, person in all_sigs
+                if not getattr(instance, fname)]
     sl_role, sl_fname, sl_person = _sl_photo_field(prod)
     sl_needs_photo = bool(sl_person and not getattr(instance, sl_fname))
 

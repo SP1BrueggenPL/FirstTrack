@@ -236,10 +236,9 @@
       {{ form.sig_sd }}{{ form.sig_pp }}{{ form.sig_ce }}{{ form.sig_te }}
       {% if team_sig_fields %}
       <div class="row g-3">
-        {% for role, field_name, person in team_sig_fields %}
-        {% if person %}
-        <div class="col-md-4 col-lg-3">
-          <div class="small fw-semibold mb-1">{{ role }} – {{ person.get_full_name }}</div>
+        {% for role, field_name, person_field, person in team_sig_fields %}
+        <div class="col-md-4 col-lg-3 team-sig-box" data-role="{{ role }}" data-person-field="{{ person_field }}" {% if not person %}hidden{% endif %}>
+          <div class="small fw-semibold mb-1 team-sig-name">{{ role }}{% if person %} – {{ person.get_full_name }}{% endif %}</div>
           <div class="border rounded bg-white" style="touch-action:none; cursor:crosshair;">
             <canvas class="team-sig-canvas" data-field="{{ field_name }}" style="width:100%; height:110px; display:block;"></canvas>
           </div>
@@ -247,7 +246,6 @@
             <i class="bi bi-eraser me-1"></i>Wyczyść
           </button>
         </div>
-        {% endif %}
         {% endfor %}
       </div>
       {% else %}
