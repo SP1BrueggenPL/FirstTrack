@@ -1903,3 +1903,11 @@ class MachineSuitableNadzorLabelTests(TestCase):
         resp = self.client.get(f'/{self.prod.pk}/pdf/etap1/')
         self.assertEqual(resp.status_code, 200)
         self.assertNotIn(b'CE / PP', resp.content)
+
+    def test_pdf_etap1_nadzor_labels_have_no_explanatory_text(self):
+        # Kolumna Nadzór ma pokazywać tylko skróty działów ("R&D / QL",
+        # "R&D / QA"), bez dopisków tłumaczących kiedy dany dział nadzoruje.
+        resp = self.client.get(f'/{self.prod.pk}/pdf/etap1/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn('w przypadku przenoszenia między zakładami'.encode(), resp.content)
+        self.assertNotIn('w przypadku mieszanek'.encode(), resp.content)
