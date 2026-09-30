@@ -171,7 +171,7 @@ def _use_full_name_labels(form, *field_names):
         form.fields[name].label_from_instance = lambda obj: obj.get_full_name() or obj.username
 
 
-def _person_field(dept_code, label, empty_label='– wybierz –'):
+def _person_field(dept_code, label, empty_label='Nie dotyczy'):
     f = forms.ModelChoiceField(
         queryset=User.objects.filter(profile__department=dept_code)
                              .select_related('profile')
@@ -321,6 +321,7 @@ class ChecklistBeforeForm(forms.ModelForm):
         exclude = [
             'production', 'completed_at', 'created_at', 'updated_at',
             'confirm_rd', 'confirm_sd', 'confirm_sc', 'confirm_qa', 'confirm_ql', 'confirm_te', 'confirm_pp',
+            'confirm_ce',
         ]
         widgets = {
             'order_updated_status':    forms.RadioSelect(attrs={'class': 'status-radio'}),
