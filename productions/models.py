@@ -247,6 +247,7 @@ class ChecklistBefore(models.Model):
     confirm_ql  = models.CharField('Potwierdził QL',  max_length=100, blank=True)
     confirm_te  = models.CharField('Potwierdził PT',  max_length=100, blank=True)
     confirm_pp  = models.CharField('Potwierdził PP',  max_length=100, blank=True)
+    confirm_ce  = models.CharField('Potwierdził CE',  max_length=100, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     created_at   = models.DateTimeField(auto_now_add=True)
     updated_at   = models.DateTimeField(auto_now=True)

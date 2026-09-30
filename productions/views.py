@@ -509,7 +509,7 @@ CHECKLIST_BEFORE_ROW_FIELDS = [
     (['analysis_form_status', 'analysis_form_version'], ['QA']),
     (['zero_sample_status', 'zero_sample_uwagi'], ['RD', 'QL']),
     (['production_card_status', 'production_card_uwagi'], ['RD', 'QA']),
-    (['machine_suitable_status', 'machine_suitable_uwagi'], ['TE']),
+    (['machine_suitable_status', 'machine_suitable_uwagi'], ['TE', 'CE', 'PP']),
     (['packaging_layout_status', 'packaging_layout_uwagi'], ['SD']),
     (['collective_label_status', 'collective_label_uwagi'], ['SD']),
     (['date_format_status', 'date_format_uwagi'], ['SD']),
@@ -540,6 +540,7 @@ def _lock_checklist_before_rows_to_department(form, user):
 CHECKLIST_BEFORE_CONFIRM_DEPTS = {
     'RD': 'confirm_rd', 'SD': 'confirm_sd', 'SC': 'confirm_sc',
     'QA': 'confirm_qa', 'QL': 'confirm_ql', 'TE': 'confirm_te', 'PP': 'confirm_pp',
+    'CE': 'confirm_ce',
 }
 
 # Dla każdego działu - pola "status" wierszy, za które ten dział odpowiada

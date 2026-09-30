@@ -1453,17 +1453,18 @@ class ChecklistBeforeConfirmationStampTests(TestCase):
         # confirm_* jest wyłączone z formularza.
         self.client.force_login(self.rd)
         self.client.post(f'/{self.prod.pk}/etap1/', {
-            'save': '1', 'confirm_sd': 'Podszywacz',
+            'save': '1', 'confirm_sd': 'Podszywacz', 'confirm_ce': 'Podszywacz',
         })
         cb = self.prod.checklist_before
         self.assertEqual(cb.confirm_sd, '')
+        self.assertEqual(cb.confirm_ce, '')
 
     def test_department_without_confirm_mapping_does_not_stamp_anything(self):
         it_user = _make_user('ituser', 'IT')
         self.client.force_login(it_user)
         self.client.post(f'/{self.prod.pk}/etap1/', {'save': '1'})
         cb = self.prod.checklist_before
-        for field in ('confirm_rd', 'confirm_sd', 'confirm_sc', 'confirm_qa', 'confirm_ql', 'confirm_te', 'confirm_pp'):
+        for field in ('confirm_rd', 'confirm_sd', 'confirm_sc', 'confirm_qa', 'confirm_ql', 'confirm_te', 'confirm_pp', 'confirm_ce'):
             self.assertEqual(getattr(cb, field), '')
 
 
@@ -1884,8 +1885,8 @@ class ReleaseProductionRestrictedToSdCeTests(TestCase):
 
 class MachineSuitableNadzorLabelTests(TestCase):
     """Wiersz "Czy maszyna produkcyjna/pakująca jest przystosowana..." ma
-    pokazywać PT jako dział nadzorujący (nie CE/PP) - zarówno w checkliście
-    jak i w wygenerowanym PDF-ie Etapu I."""
+    pokazywać wspólnie nadzorujące działy PT / CE / PP - zarówno w checkliście
+    jak i w wygenerowanym PDF-ie Etapu I i Etapu III."""
 
     def setUp(self):
         self.sd = _make_user('sduser', 'SD')
@@ -1893,16 +1894,28 @@ class MachineSuitableNadzorLabelTests(TestCase):
         self.prod = FirstProduction.objects.create(
             sap_zlecenie='1', product_name='X', scope='full')
 
-    def test_checklist_before_shows_pt_not_ce_pp(self):
+    def test_checklist_before_shows_pt_ce_pp(self):
         resp = self.client.get(f'/{self.prod.pk}/etap1/')
-        self.assertNotContains(resp, 'CE / PP')
+        self.assertContains(resp, 'PT / CE / PP')
 
-    def test_pdf_etap1_shows_pt_not_ce_pp(self):
-        # Odpowiedź to binarny PDF (application/pdf), nie HTML - assertContains
-        # próbowałby dekodować jako UTF-8 i wywalał się na losowych bajtach.
-        resp = self.client.get(f'/{self.prod.pk}/pdf/etap1/')
-        self.assertEqual(resp.status_code, 200)
-        self.assertNotIn(b'CE / PP', resp.content)
+    def test_pdf_etap1_shows_pt_ce_pp(self):
+        # Ostateczna odpowiedź to binarny, skompresowany PDF (WeasyPrint) -
+        # zwykły tekst nie występuje w bajtach strumienia. Renderujemy więc
+        # bezpośrednio szablon (ten sam, którego używa widok pdf_etap1) i
+        # sprawdzamy wygenerowany HTML przed konwersją do PDF.
+        from django.template.loader import render_to_string
+        cb = getattr(self.prod, 'checklist_before', None)
+        html = render_to_string('productions/pdf/etap1.html', {'production': self.prod, 'cb': cb})
+        self.assertIn('PT / CE / PP', html)
+
+    def test_pdf_etap3_shows_pt_ce_pp(self):
+        from django.template.loader import render_to_string
+        cb = getattr(self.prod, 'checklist_before', None)
+        html = render_to_string('productions/pdf/etap3.html', {
+            'production': self.prod, 'cb': cb, 'ca': None,
+            'sensory': [], 'packaging': [], 'team_signatures': [], 'sl_photo': None, 'photo_uris': [],
+        })
+        self.assertIn('PT / CE / PP', html)
 
     def test_pdf_etap1_nadzor_labels_have_no_explanatory_text(self):
         # Kolumna Nadzór ma pokazywać tylko skróty działów ("R&D / QL",
@@ -1911,6 +1924,41 @@ class MachineSuitableNadzorLabelTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertNotIn('w przypadku przenoszenia między zakładami'.encode(), resp.content)
         self.assertNotIn('w przypadku mieszanek'.encode(), resp.content)
+
+
+class MachineSuitableRowMultiDeptEditTests(TestCase):
+    """Wiersz "Czy maszyna..." jest teraz nadzorowany wspólnie przez PT, CE
+    i PP - każdy z tych działów może go edytować i każdy dostaje własne pole
+    potwierdzenia w PDF (confirm_te/confirm_ce/confirm_pp)."""
+
+    def setUp(self):
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full')
+
+    def _can_edit(self, dept):
+        user = _make_user(f'{dept.lower()}user', dept)
+        self.client.force_login(user)
+        resp = self.client.get(f'/{self.prod.pk}/etap1/')
+        return not resp.context['form'].fields['machine_suitable_status'].disabled
+
+    def test_pt_ce_pp_can_all_edit_the_row(self):
+        self.assertTrue(self._can_edit('TE'))
+        self.assertTrue(self._can_edit('CE'))
+        self.assertTrue(self._can_edit('PP'))
+
+    def test_unrelated_department_cannot_edit_the_row(self):
+        self.assertFalse(self._can_edit('SD'))
+
+    def test_ce_user_saving_stamps_confirm_ce(self):
+        ce = _make_user('ceuser', 'CE')
+        self.client.force_login(ce)
+        resp = self.client.post(f'/{self.prod.pk}/etap1/', {
+            'save': '1', 'machine_suitable_status': 'tak',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        cb = self.prod.checklist_before
+        self.assertEqual(cb.confirm_ce, ce.get_full_name())
+        self.assertEqual(cb.machine_suitable_status, 'tak')
 
 
 class MachineSuitableRowLockDeptCodeTests(TestCase):
@@ -2018,3 +2066,24 @@ class SignatureBoxLiveRevealMarkupTests(TestCase):
         resp = self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
         self.assertContains(resp, 'data-person-field="person_pp"')
         self.assertContains(resp, 'class="col-md-4 col-lg-3 team-sig-box" data-role="PP" data-person-field="person_pp" hidden')
+
+
+class TeamPickerNieDotyczyOptionTests(TestCase):
+    """Listy wyboru zespołu (Zespół - sensoryka/pakowanie) mają jawną opcję
+    "Nie dotyczy" zamiast neutralnego placeholdera "– wybierz –", żeby dało
+    się wprost oznaczyć, że dany dział nie bierze udziału w tej produkcji.
+    (Testowane bezpośrednio na formularzu, nie przez HTML odpowiedzi - status
+    radio parametrów sensorycznych/pakowania też pokazuje tekst "Nie dotyczy"
+    dla wartości "nd", więc sprawdzanie samego HTML nie odróżniłoby obu.)"""
+
+    def test_sensory_person_fields_use_nie_dotyczy_placeholder(self):
+        from .forms import ChecklistAfterSensoryForm
+        form = ChecklistAfterSensoryForm()
+        for name in ('person_sd', 'person_qa', 'person_rd', 'person_te', 'person_ce', 'person_sl'):
+            self.assertEqual(form.fields[name].empty_label, 'Nie dotyczy')
+
+    def test_packaging_person_fields_use_nie_dotyczy_placeholder(self):
+        from .forms import ChecklistAfterPackagingForm
+        form = ChecklistAfterPackagingForm()
+        for name in ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce', 'person_sl'):
+            self.assertEqual(form.fields[name].empty_label, 'Nie dotyczy')
