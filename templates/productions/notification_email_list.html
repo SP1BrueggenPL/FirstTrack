@@ -10,6 +10,9 @@
   Adresy z tej listy otrzymują mail o <strong>każdej</strong> pierwszej produkcji, niezależnie
   od osób przypisanych do zespołu danej produkcji. Reszta wiadomości trafia dodatkowo do
   osób wskazanych w zespole (R&amp;D, SC, QL, QA, SD, PP, CE, PT, Sprzedaż Lubeck) i do akceptującego.
+  Pula obejmuje też adresy <strong>wszystkich aktywnych kont w aplikacji</strong> - konkretną osobę
+  można z niej wykluczyć w panelu <a href="{% url 'user_list' %}">Użytkownicy</a> (checkbox
+  „Uwzględniaj w zbiorczych powiadomieniach email" w edycji konta).
 </p>
 
 <div class="card mb-3 {% if not bulk_emails_enabled %}border-warning{% endif %}">
@@ -163,6 +166,7 @@
               <th>Odbiorcy</th>
               <th>Temat</th>
               <th>Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -180,9 +184,20 @@
                   <span class="badge bg-danger" title="{{ log.error_msg }}">Błąd</span>
                 {% endif %}
               </td>
+              <td>
+                <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" title="Podgląd maila"
+                        onclick="showEmailPreview(this)"
+                        data-subject="{{ log.subject }}"
+                        data-recipient="{{ log.recipient }}"
+                        data-body="{{ log.body }}"
+                        data-sent-at="{{ log.sent_at|date:'Y-m-d H:i' }}"
+                        data-status="{% if log.skipped %}Pominięto (tryb testowy) - mail NIE został wysłany{% elif log.success %}Wysłano{% else %}Błąd: {{ log.error_msg }}{% endif %}">
+                  <i class="bi bi-eye"></i>
+                </button>
+              </td>
             </tr>
             {% empty %}
-            <tr><td colspan="4" class="text-center text-muted py-4">Brak wysłanych maili.</td></tr>
+            <tr><td colspan="5" class="text-center text-muted py-4">Brak wysłanych maili.</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -190,4 +205,40 @@
     </div>
   </div>
 </div>
+
+<!-- Podgląd maila - treść wspólna dla wszystkich wierszy historii, wypełniana
+     przez JS z atrybutów data-* klikniętego przycisku (patrz showEmailPreview
+     niżej) - unika pobierania treści z serwera osobno dla każdego podglądu. -->
+<div class="modal fade" id="emailPreviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-envelope-open me-2"></i>Podgląd maila</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Zamknij"></button>
+      </div>
+      <div class="modal-body">
+        <dl class="row small mb-3">
+          <dt class="col-sm-2">Data</dt><dd class="col-sm-10" id="email-preview-sent-at"></dd>
+          <dt class="col-sm-2">Status</dt><dd class="col-sm-10" id="email-preview-status"></dd>
+          <dt class="col-sm-2">Odbiorcy</dt><dd class="col-sm-10" id="email-preview-recipient"></dd>
+          <dt class="col-sm-2">Temat</dt><dd class="col-sm-10 fw-semibold" id="email-preview-subject"></dd>
+        </dl>
+        <pre class="border rounded p-2 bg-light small mb-0" id="email-preview-body" style="white-space:pre-wrap"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function showEmailPreview(btn) {
+  document.getElementById('email-preview-sent-at').textContent = btn.dataset.sentAt;
+  document.getElementById('email-preview-status').textContent = btn.dataset.status;
+  document.getElementById('email-preview-recipient').textContent = btn.dataset.recipient;
+  document.getElementById('email-preview-subject').textContent = btn.dataset.subject;
+  document.getElementById('email-preview-body').textContent = btn.dataset.body;
+  new bootstrap.Modal(document.getElementById('emailPreviewModal')).show();
+}
+</script>
 {% endblock %}

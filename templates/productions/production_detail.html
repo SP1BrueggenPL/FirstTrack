@@ -74,7 +74,14 @@
     </div>
 
     <div class="card mb-3">
-      <div class="card-header"><i class="bi bi-calendar3 me-2"></i>Szczegółowe informacje</div>
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-calendar3 me-2"></i>Szczegółowe informacje</span>
+        {% if production.data_confirmed_at %}
+        <span class="badge bg-success" title="Potwierdzono {{ production.data_confirmed_at|date:'d.m.Y H:i' }}">
+          <i class="bi bi-check-circle me-1"></i>Data potwierdzona
+        </span>
+        {% endif %}
+      </div>
       <div class="card-body p-0">
         <table class="table table-sm table-borderless mb-0 small">
           <tr><td class="text-muted ps-3" style="width:110px">Data prod.</td>
@@ -88,6 +95,23 @@
           {% if production.packaging_line %}<tr><td class="text-muted ps-3">Linia pak.</td><td>{{ production.packaging_line }}</td></tr>{% endif %}
           {% if production.recipe %}<tr><td class="text-muted ps-3">Receptura</td><td>{{ production.recipe }}</td></tr>{% endif %}
         </table>
+        {% if not production.data_confirmed_at %}
+        <div class="px-3 pb-2 pt-1 border-top">
+          {% if can_confirm_production_date %}
+          <form method="post" action="{% url 'confirm_production_date' production.pk %}"
+                onsubmit="return confirm('Potwierdzić datę produkcji? Po potwierdzeniu pole \'Data produkcji\' zostanie zablokowane do edycji.');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-success btn-sm">
+              <i class="bi bi-check2-circle me-1"></i>Potwierdź datę produkcji (Planowanie)
+            </button>
+          </form>
+          {% else %}
+          <span class="small text-muted" title="Dostępne tylko dla działu Planowania (SC)">
+            <i class="bi bi-lock me-1"></i>Data produkcji niepotwierdzona - dostępne tylko dla działu Planowania (SC)
+          </span>
+          {% endif %}
+        </div>
+        {% endif %}
       </div>
     </div>
 

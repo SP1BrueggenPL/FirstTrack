@@ -158,9 +158,15 @@
     <button type="submit" name="save" class="btn btn-outline-primary">
       <i class="bi bi-floppy me-1"></i>Zapisz roboczo
     </button>
+    {% if can_accept_etap2 %}
     <button type="submit" name="complete" class="btn btn-success">
       <i class="bi bi-check2-circle me-1"></i>Zatwierdź Etap II
     </button>
+    {% else %}
+    <span class="btn btn-success disabled" title="Zatwierdzenie Etapu II jest dostępne tylko dla działu R&amp;D">
+      <i class="bi bi-lock me-1"></i>Zatwierdź Etap II
+    </span>
+    {% endif %}
     <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary">Anuluj</a>
     {% if form.instance.pk %}
     <a href="{% url 'pdf_etap1' production.pk %}" class="btn btn-outline-dark ms-auto" target="_blank">

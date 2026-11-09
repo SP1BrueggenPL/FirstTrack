@@ -75,10 +75,10 @@ class ScopeRoutingAndLinkingTests(TestCase):
         self.sd = _make_user('sduser', 'SD')
         self.client.force_login(self.sd)
         self.sensory = FirstProduction.objects.create(
-            sap_zlecenie='S1', product_name='Sensory', scope='sensory')
+            sap_zlecenie='S1', product_name='Sensory', scope='sensory', acceptor=self.sd)
         self.packaging = FirstProduction.objects.create(
             sap_zlecenie='P1', product_name='Packaging', scope='packaging',
-            fert_number='F1', recipe='R1')
+            fert_number='F1', recipe='R1', acceptor=self.sd)
 
     def test_packaging_only_skips_sensory_step(self):
         resp = self.client.get(f'/{self.packaging.pk}/etap2/')
@@ -158,10 +158,10 @@ class LinkedProductionCorrectionSyncTests(TestCase):
         self.sd = _make_user('sduser', 'SD')
         self.client.force_login(self.sd)
         self.sensory = FirstProduction.objects.create(
-            sap_zlecenie='S1', product_name='Sensory', scope='sensory', person_sd=self.sd)
+            sap_zlecenie='S1', product_name='Sensory', scope='sensory', person_sd=self.sd, acceptor=self.sd)
         self.packaging = FirstProduction.objects.create(
             sap_zlecenie='P1', product_name='Packaging', scope='packaging',
-            fert_number='F1', recipe='R1', person_sd=self.sd)
+            fert_number='F1', recipe='R1', person_sd=self.sd, acceptor=self.sd)
 
         self.client.get(f'/{self.sensory.pk}/etap2/sensoryczne/')
         self.client.post(f'/{self.sensory.pk}/etap2/powiaz-pakowanie/',
@@ -262,10 +262,10 @@ class LinkedEtap3GatingTests(TestCase):
         self.sd = _make_user('sduser', 'SD')
         self.client.force_login(self.sd)
         self.sensory = FirstProduction.objects.create(
-            sap_zlecenie='S1', product_name='Sensory', scope='sensory', person_sd=self.sd)
+            sap_zlecenie='S1', product_name='Sensory', scope='sensory', person_sd=self.sd, acceptor=self.sd)
         self.packaging = FirstProduction.objects.create(
             sap_zlecenie='P1', product_name='Packaging', scope='packaging',
-            fert_number='F1', recipe='R1', person_sd=self.sd)
+            fert_number='F1', recipe='R1', person_sd=self.sd, acceptor=self.sd)
 
         self.client.get(f'/{self.sensory.pk}/etap2/sensoryczne/')
         self.client.post(f'/{self.sensory.pk}/etap2/powiaz-pakowanie/',
@@ -324,10 +324,10 @@ class LinkedPdfDataTests(TestCase):
         self.sd = _make_user('sduser', 'SD')
         self.client.force_login(self.sd)
         self.sensory = FirstProduction.objects.create(
-            sap_zlecenie='S1', product_name='Sensory', scope='sensory')
+            sap_zlecenie='S1', product_name='Sensory', scope='sensory', acceptor=self.sd)
         self.packaging = FirstProduction.objects.create(
             sap_zlecenie='P1', product_name='Packaging', scope='packaging',
-            fert_number='F1', recipe='R1')
+            fert_number='F1', recipe='R1', acceptor=self.sd)
         self.client.get(f'/{self.sensory.pk}/etap2/sensoryczne/')
         self.client.get(f'/{self.packaging.pk}/etap2/pakowanie/')
         self.client.post(f'/{self.sensory.pk}/etap2/powiaz-pakowanie/',
@@ -372,7 +372,8 @@ class TeamPhotoTests(TestCase):
         self.rd = _make_user('rduser', 'RD')
         self.sl = _make_user('sluser', 'SL')
         self.prod = FirstProduction.objects.create(
-            sap_zlecenie='1', product_name='X', scope='full', person_rd=self.rd, person_sl=self.sl)
+            sap_zlecenie='1', product_name='X', scope='full', person_rd=self.rd, person_sl=self.sl,
+            acceptor=self.sd)
 
     def test_sensory_form_has_multipart_encoding(self):
         # Pole zdjęcia Sprzedaży Lubeck jest plikiem - bez
@@ -562,12 +563,17 @@ class ReleaseDecisionWorkflowTests(TestCase):
 
     def setUp(self):
         self.sd = _make_user('sduser', 'SD')
+        self.rd = _make_user('rduser_release', 'RD')
         self.client.force_login(self.sd)
         self.prod = FirstProduction.objects.create(
             sap_zlecenie='11111111', sap_material='2222', product_name='Test', scope='full',
-            person_sd=self.sd)
-        # drive through etap1 + etap2 to reach a completed checklist_after
+            person_sd=self.sd, acceptor=self.sd)
+        # drive through etap1 + etap2 to reach a completed checklist_after -
+        # zatwierdzenie Etapu II jest dostępne tylko dla R&D (patrz
+        # _can_accept_etap2), więc na chwilę logujemy się jako R&D.
+        self.client.force_login(self.rd)
         self.client.post(f'/{self.prod.pk}/etap1/', {'complete': '1'})
+        self.client.force_login(self.sd)
         ca_url_sensory = f'/{self.prod.pk}/etap2/sensoryczne/'
         self.client.get(ca_url_sensory)
         self.prod.refresh_from_db()
@@ -707,11 +713,18 @@ class ReleaseDecisionWorkflowTests(TestCase):
         prod = FirstProduction.objects.create(
             sap_zlecenie='33333333', sap_material='4444', product_name='Test2', scope='full',
             person_sd=self.sd)
+        # "Dodatkowe próbki" to wiersz działu SD - SD zapisuje go roboczo
+        # jako pierwszy, potem R&D zatwierdza Etap II (patrz
+        # _can_accept_etap2); disabled=True na polach SD w formularzu R&D
+        # zachowuje już zapisaną wartość (nie wymaga ponownego wysłania).
         self.client.post(f'/{prod.pk}/etap1/', {
             'additional_samples_status': 'tak',
             'additional_samples_count': '7',
-            'complete': '1',
+            'save': '1',
         })
+        self.client.force_login(self.rd)
+        self.client.post(f'/{prod.pk}/etap1/', {'complete': '1'})
+        self.client.force_login(self.sd)
         self.client.get(f'/{prod.pk}/etap2/sensoryczne/')
         prod.refresh_from_db()
         self.assertEqual(prod.checklist_after.umk_count, '7')
@@ -1134,10 +1147,10 @@ class ProductionEditLinkingTests(TestCase):
         self.sd = _make_user('sduser', 'SD')
         self.client.force_login(self.sd)
         self.sensory = FirstProduction.objects.create(
-            sap_zlecenie='S1', product_name='Sensory', scope='sensory')
+            sap_zlecenie='S1', product_name='Sensory', scope='sensory', acceptor=self.sd)
         self.packaging = FirstProduction.objects.create(
             sap_zlecenie='P1', product_name='Packaging', scope='packaging',
-            fert_number='F1', recipe='R1')
+            fert_number='F1', recipe='R1', acceptor=self.sd)
 
     def test_edit_page_has_link_form_when_unlinked(self):
         resp = self.client.get(f'/{self.sensory.pk}/edytuj/')
@@ -1318,7 +1331,10 @@ class ProductionFieldDeptLockTests(TestCase):
             sap_zlecenie='1', product_name='X', scope='full',
             zmiany='stare', rd_number='R1', recipe='old-recipe')
 
-    def test_rd_cannot_change_szczegolowe_informacje_but_can_change_numery(self):
+    def test_rd_can_change_scope_and_numery_but_not_other_szczegolowe_fields(self):
+        # Zakres produkcji (scope) jest edytowalny przez R&D i SC (patrz
+        # PRODUCTION_FIELD_DEPT_LOCKS) - inaczej niż reszta "Szczegółowych
+        # informacji" (zmiany itp.), zablokowana dla RD.
         self.client.force_login(self.rd)
         resp = self.client.post(f'/{self.prod.pk}/edytuj/', {
             'sap_zlecenie': '1', 'sap_material': '', 'product_name': 'X', 'scope': 'sensory',
@@ -1326,7 +1342,7 @@ class ProductionFieldDeptLockTests(TestCase):
         })
         self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
         self.prod.refresh_from_db()
-        self.assertEqual(self.prod.scope, 'full')      # SD/SC pole - bez zmian
+        self.assertEqual(self.prod.scope, 'sensory')    # scope - R&D (i SC) może
         self.assertEqual(self.prod.zmiany, 'stare')     # SD pole - bez zmian
         self.assertEqual(self.prod.rd_number, 'R2')      # Numery - RD może
         self.assertEqual(self.prod.recipe, 'new-recipe')
@@ -1379,8 +1395,9 @@ class ProductionFieldDeptLockTests(TestCase):
     def test_new_production_can_still_be_created_by_non_sd_department(self):
         # scope wymaga wartości (brak blank=True) - disabled=True nie może
         # blokować tworzenia nowej produkcji nawet przez dział bez dostępu
-        # do tego pola (spada na domyślną wartość modelu).
-        self.client.force_login(self.rd)
+        # do tego pola (spada na domyślną wartość modelu). Tylko R&D i SC
+        # mają dostęp do scope - używamy więc SD, który go nie ma.
+        self.client.force_login(self.sd)
         resp = self.client.post('/nowa/', {
             'sap_zlecenie': '2', 'sap_material': '', 'product_name': 'Nowa', 'scope': 'sensory',
         })
@@ -1609,7 +1626,7 @@ class SensoryLockAfterFirstCompletionTests(TestCase):
         self.sd = _make_user('sduser', 'SD')
         self.client.force_login(self.sd)
         self.prod = FirstProduction.objects.create(
-            sap_zlecenie='1', product_name='X', scope='full', person_sd=self.sd)
+            sap_zlecenie='1', product_name='X', scope='full', person_sd=self.sd, acceptor=self.sd)
         self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
 
     def _sensory_params(self):
@@ -1827,9 +1844,10 @@ class ReleaseProductionRestrictedToSdCeTests(TestCase):
         self.ce = _make_user('ceuser', 'CE')
         self.rd = _make_user('rduser', 'RD')
         self.prod = FirstProduction.objects.create(
-            sap_zlecenie='1', product_name='X', scope='full', person_sd=self.sd)
-        self.client.force_login(self.sd)
+            sap_zlecenie='1', product_name='X', scope='full', person_sd=self.sd, acceptor=self.sd)
+        self.client.force_login(self.rd)
         self.client.post(f'/{self.prod.pk}/etap1/', {'complete': '1'})
+        self.client.force_login(self.sd)
         self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
         self.prod.refresh_from_db()
         sensory_params = self.prod.checklist_after.sensory_params.all()
@@ -2087,3 +2105,440 @@ class TeamPickerNieDotyczyOptionTests(TestCase):
         form = ChecklistAfterPackagingForm()
         for name in ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce', 'person_sl'):
             self.assertEqual(form.fields[name].empty_label, 'Nie dotyczy')
+
+
+class ScopeFieldDeptLockTests(TestCase):
+    """Pole 'Zakres produkcji' (scope) w edycji produkcji jest edytowalne
+    tylko przez działy R&D i SC."""
+
+    def setUp(self):
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full')
+
+    def _scope_disabled(self, dept):
+        from .forms import FirstProductionForm
+        user = _make_user(f'scope{dept.lower()}user', dept)
+        form = FirstProductionForm(instance=self.prod, user=user)
+        return form.fields['scope'].disabled
+
+    def test_rd_can_edit_scope(self):
+        self.assertFalse(self._scope_disabled('RD'))
+
+    def test_sc_can_edit_scope(self):
+        self.assertFalse(self._scope_disabled('SC'))
+
+    def test_sd_cannot_edit_scope(self):
+        self.assertTrue(self._scope_disabled('SD'))
+
+
+class LabSamplesDeliveredNieDotyczyChoiceTests(TestCase):
+    """Pole 'Czy dostarczono próbki do laboratorium?' ma trzecią opcję
+    'Nie dotyczy' obok Tak/Nie."""
+
+    def test_model_field_has_nd_choice(self):
+        from .models import ChecklistAfter
+        choices = dict(ChecklistAfter._meta.get_field('lab_samples_delivered').choices)
+        self.assertEqual(choices.get('nd'), 'Nie dotyczy')
+
+    def test_form_field_has_nd_choice(self):
+        from .forms import ChecklistAfterSensoryForm
+        form = ChecklistAfterSensoryForm()
+        values = [c[0] for c in form.fields['lab_samples_delivered'].choices]
+        self.assertIn('nd', values)
+
+
+class SAPExcelNormalizationTests(TestCase):
+    """Pomocnicze funkcje normalizujące komórki Excela dla importu SAP
+    (liczby bez '.0' na końcu, daty sprowadzone do RRRR-MM-DD)."""
+
+    def test_normalize_cell_strips_trailing_float_zero(self):
+        from .views import _normalize_sap_excel_cell
+        self.assertEqual(_normalize_sap_excel_cell(11366717.0), '11366717')
+
+    def test_normalize_cell_passes_through_string(self):
+        from .views import _normalize_sap_excel_cell
+        self.assertEqual(_normalize_sap_excel_cell(' 124886 '), '124886')
+
+    def test_normalize_cell_none_is_empty_string(self):
+        from .views import _normalize_sap_excel_cell
+        self.assertEqual(_normalize_sap_excel_cell(None), '')
+
+    def test_normalize_date_from_dotted_string(self):
+        from .views import _normalize_sap_excel_date
+        self.assertEqual(_normalize_sap_excel_date('02.11.2026'), '2026-11-02')
+
+    def test_normalize_date_from_datetime_object(self):
+        from .views import _normalize_sap_excel_date
+        import datetime
+        self.assertEqual(_normalize_sap_excel_date(datetime.datetime(2026, 11, 2)), '2026-11-02')
+
+    def test_normalize_date_from_date_object(self):
+        from .views import _normalize_sap_excel_date
+        import datetime
+        self.assertEqual(_normalize_sap_excel_date(datetime.date(2026, 11, 2)), '2026-11-02')
+
+    def test_extract_from_excel_maps_header_and_skips_blank_rows(self):
+        from .views import _extract_sap_data_from_excel
+        import openpyxl
+        from io import BytesIO
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(['Zlecenie', 'Materiał', 'Opis/Krótki tekst', 'Data produkcji'])
+        ws.append(['11366717', 124886, 'Produkt X QSL', '02.11.2026'])
+        ws.append([None, None, None, None])
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        rows = _extract_sap_data_from_excel(buf)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['sap_zlecenie'], '11366717')
+        self.assertEqual(rows[0]['sap_material'], '124886')
+        self.assertEqual(rows[0]['product_name'], 'Produkt X QSL')
+        self.assertEqual(rows[0]['data_produkcji'], '2026-11-02')
+
+    def test_extract_from_excel_falls_back_to_column_order_for_unknown_header(self):
+        from .views import _extract_sap_data_from_excel
+        import openpyxl
+        from io import BytesIO
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(['Col A', 'Col B', 'Col C', 'Col D'])
+        ws.append(['11366717', '124886', 'Produkt X', '02.11.2026'])
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        rows = _extract_sap_data_from_excel(buf)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['sap_zlecenie'], '11366717')
+        self.assertEqual(rows[0]['data_produkcji'], '2026-11-02')
+
+
+class SAPExcelImportViewTests(TestCase):
+    """Formularz importu SAP z Excela na stronie import_sap - alternatywa dla
+    ekstrakcji AI ze screenshotu, współdzieli podgląd/zatwierdzanie wierszy."""
+
+    def setUp(self):
+        self.user = _make_user('excelimportuser', 'SD')
+        self.client.force_login(self.user)
+
+    def _xlsx_upload(self, rows):
+        import openpyxl
+        from io import BytesIO
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(['Zlecenie', 'Materiał', 'Opis/Krótki tekst', 'Data produkcji'])
+        for row in rows:
+            ws.append(list(row))
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return SimpleUploadedFile(
+            'sap.xlsx', buf.read(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+    def test_excel_upload_shows_extracted_rows_for_review(self):
+        xlsx = self._xlsx_upload([
+            ('11366717', '124886', 'Netto KM MSR Schoko-Banane', '02.11.2026'),
+        ])
+        resp = self.client.post('/import-sap/', {'excel_file': xlsx})
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, '11366717')
+        self.assertContains(resp, '2026-11-02')
+
+    def test_screenshot_form_untouched_when_posting_excel(self):
+        # Wysłanie Excela nie powinno próbować walidować/uruchamiać formularza
+        # screenshotu (różne pola w request.FILES).
+        xlsx = self._xlsx_upload([('11366717', '124886', 'X', '02.11.2026')])
+        resp = self.client.post('/import-sap/', {'excel_file': xlsx})
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.context['form'].is_bound)
+
+
+class NotificationPoolTests(TestCase):
+    """Pula odbiorców zbiorczych powiadomień obejmuje stałą listę adresów
+    (NotificationRecipient) ORAZ adresy kont aplikacji, poza tymi jawnie
+    wykluczonymi (UserProfile.notify_in_pool=False) i nieaktywnymi kontami."""
+
+    def setUp(self):
+        from .models import NotificationRecipient
+        self.recipient = NotificationRecipient.objects.create(email='pool@example.com', active=True)
+        self.inactive_recipient = NotificationRecipient.objects.create(email='inactivepool@example.com', active=False)
+        self.user_in_pool = _make_user('poolsduser', 'SD', email='inpool@example.com')
+        self.excluded_user = _make_user('excludeduser', 'SD', email='excluded@example.com')
+        self.excluded_user.profile.notify_in_pool = False
+        self.excluded_user.profile.save()
+        self.inactive_user = _make_user('inactiveuser', 'SD', email='inactiveacct@example.com')
+        self.inactive_user.is_active = False
+        self.inactive_user.save()
+
+    def test_pool_includes_active_recipient_list(self):
+        from .views import _notification_pool_emails
+        self.assertIn('pool@example.com', _notification_pool_emails())
+
+    def test_pool_excludes_inactive_recipient(self):
+        from .views import _notification_pool_emails
+        self.assertNotIn('inactivepool@example.com', _notification_pool_emails())
+
+    def test_pool_includes_account_email_by_default(self):
+        from .views import _notification_pool_emails
+        self.assertIn('inpool@example.com', _notification_pool_emails())
+
+    def test_pool_excludes_opted_out_user(self):
+        from .views import _notification_pool_emails
+        self.assertNotIn('excluded@example.com', _notification_pool_emails())
+
+    def test_pool_excludes_inactive_user_account(self):
+        from .views import _notification_pool_emails
+        self.assertNotIn('inactiveacct@example.com', _notification_pool_emails())
+
+
+class UserEditNotifyInPoolToggleTests(TestCase):
+    """Panel Użytkownicy pozwala wykluczyć konkretną osobę ze zbiorczych
+    powiadomień bez usuwania jej konta."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username='poolettoggleadmin', password='x', is_staff=True, email='admin@example.com')
+        self.client.force_login(self.admin)
+        self.target = _make_user('toggletarget', 'SD')
+
+    def test_unchecking_notify_in_pool_excludes_user(self):
+        resp = self.client.post(f'/uzytkownicy/{self.target.pk}/edytuj/', {
+            'full_name': 'Target User', 'email': self.target.email,
+            'department': 'SD', 'is_active': 'on',
+            # is_staff i notify_in_pool pominięte - odznaczone checkboxy.
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.target.profile.refresh_from_db()
+        self.assertFalse(self.target.profile.notify_in_pool)
+
+    def test_checking_notify_in_pool_keeps_user_included(self):
+        self.target.profile.notify_in_pool = False
+        self.target.profile.save()
+        resp = self.client.post(f'/uzytkownicy/{self.target.pk}/edytuj/', {
+            'full_name': 'Target User', 'email': self.target.email,
+            'department': 'SD', 'is_active': 'on', 'notify_in_pool': 'on',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.target.profile.refresh_from_db()
+        self.assertTrue(self.target.profile.notify_in_pool)
+
+
+class EmailLogPreviewMarkupTests(TestCase):
+    """Historia wysyłek pokazuje pełny podgląd (temat, treść, odbiorcy) na
+    żądanie, nie tylko ucięty fragment w tabeli."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username='emaillogadmin', password='x', is_staff=True, email='admin2@example.com')
+        self.client.force_login(self.admin)
+        EmailLog.objects.create(recipient='a@example.com', subject='Temat testowy', body='Treść testowa', success=True)
+
+    def test_log_row_has_preview_button_with_full_data(self):
+        resp = self.client.get('/ustawienia/maile/')
+        self.assertContains(resp, 'showEmailPreview(this)')
+        self.assertContains(resp, 'data-subject="Temat testowy"')
+        self.assertContains(resp, 'data-body="Treść testowa"')
+
+
+class Etap2AcceptanceRDOnlyTests(TestCase):
+    """Zatwierdzenie Etapu II (przycisk 'Zatwierdź Etap II') jest dostępne
+    tylko dla działu R&D - zapisywanie roboczej checklisty pozostaje
+    dostępne dla każdego (z zachowaniem blokad pól wg działu)."""
+
+    def setUp(self):
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full')
+
+    def test_non_rd_cannot_complete_etap2(self):
+        sd = _make_user('etap2sduser', 'SD')
+        self.client.force_login(sd)
+        resp = self.client.post(f'/{self.prod.pk}/etap1/', {'complete': '1'})
+        self.assertEqual(resp.status_code, 302)
+        self.prod.refresh_from_db()
+        self.assertNotEqual(self.prod.status, 'etap1')
+
+    def test_rd_can_complete_etap2(self):
+        rd = _make_user('etap2rduser', 'RD')
+        self.client.force_login(rd)
+        resp = self.client.post(f'/{self.prod.pk}/etap1/', {'complete': '1'})
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.status, 'etap1')
+
+    def test_non_rd_can_still_save_draft(self):
+        sd = _make_user('etap2sduser2', 'SD')
+        self.client.force_login(sd)
+        resp = self.client.post(f'/{self.prod.pk}/etap1/', {'save': '1'})
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(ChecklistBefore.objects.filter(production=self.prod).exists())
+
+    def test_button_disabled_in_template_for_non_rd(self):
+        sd = _make_user('etap2sduser3', 'SD')
+        self.client.force_login(sd)
+        resp = self.client.get(f'/{self.prod.pk}/etap1/')
+        self.assertContains(resp, 'Zatwierdzenie Etapu II jest dostępne tylko dla działu R&amp;D')
+
+
+class ProductionDateConfirmationTests(TestCase):
+    """Potwierdzenie daty produkcji przez dział Planowania (SC) blokuje
+    dalszą edycję pola i wysyła powiadomienie do puli."""
+
+    def setUp(self):
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full', data_produkcji=date(2026, 12, 1))
+
+    def test_sc_can_confirm_date(self):
+        sc = _make_user('confirmscuser', 'SC')
+        self.client.force_login(sc)
+        resp = self.client.post(f'/{self.prod.pk}/potwierdz-date/')
+        self.assertEqual(resp.status_code, 302)
+        self.prod.refresh_from_db()
+        self.assertIsNotNone(self.prod.data_confirmed_at)
+
+    def test_non_sc_cannot_confirm_date(self):
+        sd = _make_user('confirmsduser', 'SD')
+        self.client.force_login(sd)
+        resp = self.client.post(f'/{self.prod.pk}/potwierdz-date/')
+        self.assertEqual(resp.status_code, 302)
+        self.prod.refresh_from_db()
+        self.assertIsNone(self.prod.data_confirmed_at)
+
+    def test_confirmation_sends_pool_notification(self):
+        from .models import NotificationRecipient
+        NotificationRecipient.objects.create(email='pooldate@example.com', active=True)
+        sc = _make_user('confirmscuser2', 'SC')
+        self.client.force_login(sc)
+        self.client.post(f'/{self.prod.pk}/potwierdz-date/')
+        self.assertTrue(any('pooldate@example.com' in m.to for m in mail.outbox))
+
+    def test_date_field_locked_after_confirmation(self):
+        from .forms import FirstProductionForm
+        sc = _make_user('confirmscuser3', 'SC')
+        self.client.force_login(sc)
+        self.client.post(f'/{self.prod.pk}/potwierdz-date/')
+        self.prod.refresh_from_db()
+        sd = _make_user('confirmsduser2', 'SD')
+        form = FirstProductionForm(instance=self.prod, user=sd)
+        self.assertTrue(form.fields['data_produkcji'].disabled)
+
+    def test_staff_can_still_edit_date_after_confirmation(self):
+        from .forms import FirstProductionForm
+        sc = _make_user('confirmscuser4', 'SC')
+        self.client.force_login(sc)
+        self.client.post(f'/{self.prod.pk}/potwierdz-date/')
+        self.prod.refresh_from_db()
+        admin = User.objects.create_user(username='confirmdateadmin', password='x', is_staff=True)
+        form = FirstProductionForm(instance=self.prod, user=admin)
+        self.assertFalse(form.fields['data_produkcji'].disabled)
+
+
+class StageAcceptorOnlyTests(TestCase):
+    """Zatwierdzenie checklisty sensoryki/pakowania (przejście do kolejnego
+    etapu) jest dostępne tylko dla osoby wskazanej jako akceptująca tę
+    produkcję - zapisywanie roboczej checklisty pozostaje dostępne dla
+    każdego."""
+
+    def setUp(self):
+        self.acceptor = _make_user('stageacceptor', 'SD')
+        self.other = _make_user('stageother', 'SD')
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full', acceptor=self.acceptor)
+
+    def _sensory_params(self):
+        self.prod.refresh_from_db()
+        return self.prod.checklist_after.sensory_params.all()
+
+    def test_non_acceptor_cannot_accept_sensory(self):
+        self.client.force_login(self.other)
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        sensory_params = self._sensory_params()
+        resp = self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'next': '1',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.prod.refresh_from_db()
+        self.assertIsNone(self.prod.checklist_after.sensory_completed_at)
+
+    def test_non_acceptor_can_still_save_draft_sensory(self):
+        self.client.force_login(self.other)
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        sensory_params = self._sensory_params()
+        resp = self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'save': '1',
+        })
+        self.assertEqual(resp.status_code, 302)
+
+    def test_acceptor_can_accept_sensory(self):
+        self.client.force_login(self.acceptor)
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        sensory_params = self._sensory_params()
+        resp = self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'next': '1',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.prod.refresh_from_db()
+        self.assertIsNotNone(self.prod.checklist_after.sensory_completed_at)
+
+    def test_non_acceptor_cannot_accept_packaging(self):
+        self.prod.scope = 'packaging'
+        self.prod.save()
+        self.client.force_login(self.other)
+        self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
+        self.prod.refresh_from_db()
+        packaging_items = self.prod.checklist_after.packaging_items.all()
+        resp = self.client.post(f'/{self.prod.pk}/etap2/pakowanie/', {
+            'packaging-TOTAL_FORMS': str(packaging_items.count()),
+            'packaging-INITIAL_FORMS': str(packaging_items.count()),
+            **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            'complete': '1',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.prod.refresh_from_db()
+        self.assertNotEqual(self.prod.status, 'etap2')
+
+    def test_acceptor_can_accept_packaging(self):
+        self.prod.scope = 'packaging'
+        self.prod.save()
+        self.client.force_login(self.acceptor)
+        self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
+        self.prod.refresh_from_db()
+        packaging_items = self.prod.checklist_after.packaging_items.all()
+        resp = self.client.post(f'/{self.prod.pk}/etap2/pakowanie/', {
+            'packaging-TOTAL_FORMS': str(packaging_items.count()),
+            'packaging-INITIAL_FORMS': str(packaging_items.count()),
+            **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            'complete': '1',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.status, 'etap2')
+
+    def test_no_acceptor_blocks_everyone_except_staff(self):
+        prod = FirstProduction.objects.create(sap_zlecenie='2', product_name='Y', scope='full')
+        self.client.force_login(self.other)
+        self.client.get(f'/{prod.pk}/etap2/sensoryczne/')
+        sensory_params = prod.checklist_after.sensory_params.all()
+        resp = self.client.post(f'/{prod.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'next': '1',
+        })
+        self.assertEqual(resp.status_code, 302)
+        prod.refresh_from_db()
+        self.assertIsNone(prod.checklist_after.sensory_completed_at)

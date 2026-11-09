@@ -43,6 +43,11 @@ class UserProfile(models.Model):
     # logowaniu (i ponownie po zresetowaniu przez admina). Trzymany jako hash,
     # nie plain-text, tak jak hasło.
     auth_code_hash = models.CharField('Hash kodu autoryzującego', max_length=128, blank=True)
+    # Pula odbiorców zbiorczych powiadomień (patrz _notification_pool_emails
+    # w views.py) obejmuje nie tylko stałą listę adresów z Zarządzania, ale
+    # też konta z aplikacji - to pole pozwala wykluczyć konkretną osobę z tej
+    # puli (np. konto techniczne/testowe), bez usuwania jej konta.
+    notify_in_pool = models.BooleanField('Uwzględniaj w zbiorczych powiadomieniach email', default=True)
 
     class Meta:
         verbose_name = 'Profil użytkownika'
@@ -164,6 +169,12 @@ class FirstProduction(models.Model):
     email_sent_at  = models.DateTimeField('Data wysłania maila', null=True, blank=True)
     reminder_sent_at = models.DateTimeField('Data wysłania przypomnienia', null=True, blank=True)
     reminder_24h_sent_at = models.DateTimeField('Data wysłania przypomnienia 24h przed', null=True, blank=True)
+    # Jednorazowe potwierdzenie daty produkcji przez dział Planowania (SC) -
+    # dopóki jest puste, data_produkcji może być edytowana (patrz
+    # PRODUCTION_FIELD_DEPT_LOCKS w forms.py); po ustawieniu pole jest
+    # zablokowane dla wszystkich poza adminem (patrz confirm_production_date
+    # w views.py).
+    data_confirmed_at = models.DateTimeField('Data produkcji potwierdzona przez Planowanie (SC)', null=True, blank=True)
     created_at     = models.DateTimeField(auto_now_add=True)
     updated_at     = models.DateTimeField(auto_now=True)
 
@@ -292,7 +303,7 @@ class ChecklistAfter(models.Model):
     yield_takty = models.CharField('Takty', max_length=50, blank=True)
     lab_samples_delivered = models.CharField(
         'Czy dostarczono próbki do laboratorium?', max_length=3,
-        choices=[('tak', 'Tak'), ('nie', 'Nie')], blank=True, default='nie',
+        choices=[('tak', 'Tak'), ('nie', 'Nie'), ('nd', 'Nie dotyczy')], blank=True, default='nie',
     )
     uwagi       = models.TextField('Uwagi', blank=True)
 

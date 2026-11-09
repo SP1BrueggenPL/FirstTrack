@@ -268,6 +268,7 @@
     <button type="submit" name="save" class="btn btn-outline-primary">
       <i class="bi bi-floppy me-1"></i>Zapisz roboczo
     </button>
+    {% if can_accept_stage %}
     <button type="submit" name="next" class="btn btn-primary">
       {% if production.is_sensory_only %}
         Zatwierdź sensorykę <i class="bi bi-check2-circle ms-1"></i>
@@ -275,6 +276,12 @@
         Dalej: Pakowanie <i class="bi bi-arrow-right ms-1"></i>
       {% endif %}
     </button>
+    {% else %}
+    <span class="btn btn-primary disabled" title="Dostępne tylko dla osoby akceptującej tę produkcję">
+      <i class="bi bi-lock me-1"></i>
+      {% if production.is_sensory_only %}Zatwierdź sensorykę{% else %}Dalej: Pakowanie{% endif %}
+    </span>
+    {% endif %}
     {% endif %}
     <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary">Anuluj</a>
   </div>

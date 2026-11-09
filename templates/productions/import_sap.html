@@ -3,7 +3,7 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h4 class="mb-0"><i class="bi bi-camera me-2"></i>Import z SAP – AI ekstrakcja</h4>
+  <h4 class="mb-0"><i class="bi bi-camera me-2"></i>Import z SAP</h4>
   <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary btn-sm">
     <i class="bi bi-arrow-left me-1"></i>Powrót
   </a>
@@ -37,6 +37,29 @@
     </div>
 
     <div class="card mt-3">
+      <div class="card-header"><i class="bi bi-file-earmark-excel me-2"></i>Lub wgraj Excel</div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">
+          Plik .xlsx z nagłówkiem w pierwszym wierszu i kolumnami (w dowolnej kolejności):
+          <strong>Zlecenie</strong>, <strong>Materiał</strong>, <strong>Opis/Krótki tekst</strong>,
+          <strong>Data produkcji</strong>.
+        </p>
+        <form method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+          <div class="mb-3">
+            {{ excel_form.excel_file }}
+            {% if excel_form.excel_file.errors %}
+              <div class="text-danger small mt-1">{{ excel_form.excel_file.errors }}</div>
+            {% endif %}
+          </div>
+          <button type="submit" class="btn btn-outline-success w-100">
+            <i class="bi bi-upload me-1"></i>Wczytaj z Excela
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mt-3">
       <div class="card-header"><i class="bi bi-plus-circle me-2"></i>Lub dodaj ręcznie</div>
       <div class="card-body">
         <p class="text-muted small">Dodaj produkcję bez importu ze zdjęcia.</p>
@@ -53,7 +76,7 @@
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-table me-2"></i>Wyciągnięte dane (<span id="header-count">{{ extracted|length }}</span> wierszy)</span>
-        <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>AI gotowe</span>
+        <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Gotowe do sprawdzenia</span>
       </div>
       <div class="card-body p-0">
         {{ extracted|json_script:"extracted-data" }}
