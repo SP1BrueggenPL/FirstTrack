@@ -52,6 +52,18 @@
                 </label>
               </div>
             </div>
+            <div class="col-12">
+              <div class="form-check">
+                {{ form.notify_in_pool }}
+                <label class="form-check-label fw-semibold" for="{{ form.notify_in_pool.id_for_label }}">
+                  Uwzględniaj w zbiorczych powiadomieniach email
+                </label>
+                <div class="form-text">
+                  Gdy odznaczone, to konto nie otrzymuje maili wysyłanych do całej puli (nowe produkcje,
+                  przypomnienia, akceptacje) - niezależnie od adresów ze stałej listy w Zarządzaniu.
+                </div>
+              </div>
+            </div>
             {% endif %}
 
             {% if is_create %}

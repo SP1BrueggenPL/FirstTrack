@@ -1,6 +1,8 @@
 import json
 import base64
+import datetime
 import logging
+import re
 from .pdf_views import pdf_etap1, pdf_etap2, pdf_etap3
 from django.core.cache import cache
 from django.shortcuts import render, get_object_or_404, redirect
@@ -22,7 +24,7 @@ from .models import (
     EmailLog, EmailSettings, UserProfile, NotificationRecipient, DEPT_CHOICES,
 )
 from .forms import (
-    FirstProductionForm, SAPImportForm,
+    FirstProductionForm, SAPImportForm, SAPExcelImportForm,
     ChecklistBeforeForm,
     ChecklistAfterSensoryForm, ChecklistAfterPackagingForm, ChecklistAfterAcceptanceForm,
     ChecklistAfterHeaderForm, LinkPackagingForm,
@@ -211,22 +213,38 @@ def _default_scope_for_material(sap_material):
 @login_required
 def import_sap(request):
     form = SAPImportForm()
+    excel_form = SAPExcelImportForm()
     extracted = None
 
     if request.method == 'POST':
-        form = SAPImportForm(request.POST, request.FILES)
-        if form.is_valid():
-            image_file = request.FILES['screenshot']
-            image_data = image_file.read()
-            image_b64  = base64.standard_b64encode(image_data).decode('utf-8')
-            media_type = image_file.content_type or 'image/jpeg'
+        if 'excel_file' in request.FILES:
+            excel_form = SAPExcelImportForm(request.POST, request.FILES)
+            if excel_form.is_valid():
+                try:
+                    extracted = _extract_sap_data_from_excel(request.FILES['excel_file'])
+                except ExcelImportError as e:
+                    messages.error(request, str(e))
+                    extracted = None
+                else:
+                    if extracted:
+                        request.session['sap_extracted'] = extracted
+                        messages.success(request, f'Wczytano z Excela: {len(extracted)} wierszy. Sprawdź i zatwierdź poniżej.')
+                    else:
+                        messages.error(request, 'Plik nie zawierał żadnych wierszy z danymi.')
+        else:
+            form = SAPImportForm(request.POST, request.FILES)
+            if form.is_valid():
+                image_file = request.FILES['screenshot']
+                image_data = image_file.read()
+                image_b64  = base64.standard_b64encode(image_data).decode('utf-8')
+                media_type = image_file.content_type or 'image/jpeg'
 
-            extracted = _extract_sap_data(image_b64, media_type)
-            if extracted:
-                request.session['sap_extracted'] = extracted
-                messages.success(request, f'AI wyciągnął dane: {len(extracted)} wierszy. Sprawdź i zatwierdź poniżej.')
-            else:
-                messages.error(request, 'Nie udało się wyciągnąć danych. Sprawdź klucz API lub spróbuj ręcznie.')
+                extracted = _extract_sap_data(image_b64, media_type)
+                if extracted:
+                    request.session['sap_extracted'] = extracted
+                    messages.success(request, f'AI wyciągnął dane: {len(extracted)} wierszy. Sprawdź i zatwierdź poniżej.')
+                else:
+                    messages.error(request, 'Nie udało się wyciągnąć danych. Sprawdź klucz API lub spróbuj ręcznie.')
 
     prefill = request.session.pop('sap_extracted', None)
     if prefill:
@@ -235,6 +253,7 @@ def import_sap(request):
 
     return render(request, 'productions/import_sap.html', {
         'form': form,
+        'excel_form': excel_form,
         'extracted': prefill,
         'scope_choices': FirstProduction.SCOPE_CHOICES,
     })
@@ -258,21 +277,34 @@ def _extract_sap_data(image_b64: str, media_type: str) -> list | None:
         )
 
         prompt = """Masz przed sobą screenshot tabeli z SAP lub tabeli planowania produkcji.
+Typowy układ kolumn (nie wszystkie muszą wystąpić, kieruj się nagłówkami widocznymi
+na zrzucie): Zlecenie, Zakład, Kontrola, Materiał, Krótki tekst materiału, Il. post.,
+Il. potw., Il. dostar. (szt./KG), Jed., RozpWgHarm, Zak./harm., TK/TW.
 
-Wyciągnij WSZYSTKIE wiersze danych i zwróć je jako JSON array.
+Wyciągnij WSZYSTKIE wiersze danych i zwróć je jako JSON array. Pomiń wiersz nagłówka
+oraz ewentualny wiersz podsumowania/sum na dole tabeli (np. wyróżniony innym kolorem,
+z samymi sumami ilości) - to NIE jest wiersz zlecenia.
+
 Każdy wiersz to obiekt z dokładnie tymi polami:
-- sap_zlecenie    (numer zlecenia SAP, kolumna "Zlecenie" lub "Zlecenia", np. "11333525")
-- sap_material    (numer materiału, kolumna "Materiał" lub "Materi...", np. "28124")
-- product_name    (opis produktu, kolumna "Krótki tekst materiału" lub "Opis", np. "MSM Crunchy Pink 168x35g TC")
-- data_produkcji  (data produkcji/rozp., kolumna "RozpWgH" lub "data produkcji", format YYYY-MM-DD, np. "2026-06-23")
+- sap_zlecenie    - numer z kolumny "Zlecenie", zwykle 8-cyfrowa liczba (np. "11366717").
+                    Przepisz cyfra po cyfrze, nie zgaduj.
+- sap_material    - numer z kolumny "Materiał" (np. "124886" albo "28206").
+                    Przepisz cyfra po cyfrze, nie zgaduj.
+- product_name    - pełny tekst z kolumny "Krótki tekst materiału" (opis produktu),
+                    razem z ewentualnymi oznaczeniami na końcu (np. "QSL", "ZS", "KIB").
+- data_produkcji  - data z kolumny "RozpWgHarm" (rozpoczęcie wg harmonogramu - to jest
+                    planowana data produkcji). NIE bierz daty z kolumny "Zak./harm."
+                    (zakończenie wg harmonogramu) - to inna data. Format w tabeli to
+                    zwykle DD.MM.RRRR lub D.MM.RRRR - zamień na RRRR-MM-DD.
 
-Daty w formacie DD.MM.YYYY lub D.MM.YYYY zamień na YYYY-MM-DD.
-Jeśli pole jest nieczytelne lub brak, użyj pustego stringa "".
+Jeśli jakiejś cyfry lub znaku nie jesteś pewien (nieczytelne, zasłonięte, ucięte), zwróć
+pusty string "" dla tego pola zamiast zgadywać - błędna cyfra w numerze zlecenia/materiału
+jest gorsza niż brak danych, bo trafi do systemu produkcyjnego.
 Zwróć TYLKO JSON array, bez żadnego dodatkowego tekstu, komentarzy ani formatowania markdown."""
 
         response = client.chat.completions.create(
             model=deployment,
-            max_tokens=2000,
+            max_tokens=4000,
             messages=[{
                 'role': 'user',
                 'content': [
@@ -301,6 +333,100 @@ Zwróć TYLKO JSON array, bez żadnego dodatkowego tekstu, komentarzy ani format
     except Exception as e:
         logger.error('Błąd ekstrakcji SAP (Azure OpenAI): %s', e, exc_info=True)
         return None
+
+
+def _normalize_sap_excel_cell(value):
+    """Excel często przechowuje numery zlecenia/materiału jako liczby (np.
+    11366717.0) - trzeba je zamienić na zwykły string bez '.0' na końcu."""
+    if value is None:
+        return ''
+    if isinstance(value, float):
+        return str(int(value)) if value == int(value) else str(value)
+    if isinstance(value, int):
+        return str(value)
+    return str(value).strip()
+
+
+def _normalize_sap_excel_date(value):
+    """Komórka z datą w Excelu wraca jako datetime.date/datetime (gdy kolumna
+    ma format daty) albo jako zwykły tekst DD.MM.RRRR - oba przypadki trzeba
+    sprowadzić do RRRR-MM-DD, tak samo jak w ekstrakcji AI ze screenshotu."""
+    if value is None or value == '':
+        return ''
+    if isinstance(value, (datetime.date, datetime.datetime)):
+        return value.strftime('%Y-%m-%d')
+    text = str(value).strip()
+    m = re.match(r'^(\d{1,2})\.(\d{1,2})\.(\d{4})$', text)
+    if m:
+        day, month, year = m.groups()
+        return f'{year}-{int(month):02d}-{int(day):02d}'
+    return text
+
+
+# Nagłówki akceptowane w pliku Excel (bez rozróżniania wielkości liter) -
+# zgodnie z opisem w import_sap.html ("zlecenie, materiał, opis/krótki tekst,
+# data produkcji"), z kilkoma typowymi wariantami nazw kolumn.
+_SAP_EXCEL_COLUMN_MAP = {
+    'zlecenie': 'sap_zlecenie', 'nr zlecenia': 'sap_zlecenie', 'zlecenie sap': 'sap_zlecenie',
+    'materiał': 'sap_material', 'material': 'sap_material', 'nr materiału': 'sap_material',
+    'opis': 'product_name', 'krótki tekst': 'product_name',
+    'krótki tekst materiału': 'product_name', 'opis/krótki tekst': 'product_name',
+    'data produkcji': 'data_produkcji', 'data prod.': 'data_produkcji', 'data prod': 'data_produkcji',
+}
+
+
+def _extract_sap_data_from_excel(excel_file) -> list:
+    """Parsuje plik .xlsx z kolumnami Zlecenie/Materiał/Opis/Data produkcji -
+    alternatywa dla ekstrakcji AI ze screenshotu, dla danych już dostępnych w
+    Excelu (np. eksport z SAP). Zwraca wiersze w tym samym kształcie co
+    _extract_sap_data, żeby mogły współdzielić podgląd/zatwierdzanie
+    (patrz import_sap/api_prefill_sap)."""
+    try:
+        import openpyxl
+    except ImportError as e:
+        logger.error('openpyxl nie jest zainstalowany - nie można zaimportować z Excela: %s', e)
+        raise ExcelImportError(
+            'Nie udało się przetworzyć pliku: biblioteka openpyxl nie jest zainstalowana na serwerze. '
+            'Skontaktuj się z administratorem systemu.'
+        ) from e
+
+    try:
+        wb = openpyxl.load_workbook(excel_file, data_only=True)
+    except Exception as e:
+        logger.error('Błąd wczytywania pliku Excel (import SAP): %s', e, exc_info=True)
+        raise ExcelImportError('Nie udało się wczytać pliku - sprawdź, czy to poprawny plik .xlsx.') from e
+
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return []
+
+    header = [str(c or '').strip().lower() for c in rows[0]]
+    idx = {}
+    for i, name in enumerate(header):
+        field = _SAP_EXCEL_COLUMN_MAP.get(name)
+        if field and field not in idx:
+            idx[field] = i
+    required = ('sap_zlecenie', 'sap_material', 'product_name', 'data_produkcji')
+    if any(f not in idx for f in required):
+        # Nagłówek nierozpoznany - zakładamy kolejność kolumn A/B/C/D.
+        idx = {'sap_zlecenie': 0, 'sap_material': 1, 'product_name': 2, 'data_produkcji': 3}
+
+    def cell(row, field):
+        i = idx.get(field)
+        return row[i] if i is not None and i < len(row) else None
+
+    extracted = []
+    for row in rows[1:]:
+        if not any(row):
+            continue
+        extracted.append({
+            'sap_zlecenie': _normalize_sap_excel_cell(cell(row, 'sap_zlecenie')),
+            'sap_material': _normalize_sap_excel_cell(cell(row, 'sap_material')),
+            'product_name': str(cell(row, 'product_name') or '').strip(),
+            'data_produkcji': _normalize_sap_excel_date(cell(row, 'data_produkcji')),
+        })
+    return extracted
 
 
 # ──────────────────────────────────────────────
@@ -411,6 +537,48 @@ def production_edit(request, pk):
     })
 
 
+def _can_confirm_production_date(user):
+    """Potwierdzenie daty produkcji (na wypadek jej zmiany) jest dostępne
+    tylko dla działu Planowania (SC) - dopóki go nie klikną, datę może
+    zmieniać dział SD (patrz PRODUCTION_FIELD_DEPT_LOCKS w forms.py); po
+    potwierdzeniu pole jest zablokowane dla wszystkich poza adminem."""
+    if user.is_staff:
+        return True
+    dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
+    return dept == 'SC'
+
+
+@login_required
+@require_POST
+def confirm_production_date(request, pk):
+    prod = get_object_or_404(FirstProduction, pk=pk)
+    if not _can_confirm_production_date(request.user):
+        messages.error(request, 'Potwierdzenie daty produkcji jest dostępne tylko dla działu Planowania (SC).')
+        return redirect('production_detail', pk=pk)
+    if prod.data_confirmed_at:
+        messages.info(request, 'Data produkcji została już potwierdzona wcześniej.')
+        return redirect('production_detail', pk=pk)
+
+    prod.data_confirmed_at = timezone.now()
+    prod.save(update_fields=['data_confirmed_at'])
+
+    subject = f'[FirstTrack] Potwierdzono datę produkcji: {prod.product_name}'
+    body = '\n'.join([
+        f'Dział Planowania (SC) potwierdził datę produkcji dla: {prod.product_name}',
+        f'Zlecenie SAP:   {prod.sap_zlecenie or "–"}',
+        f'Data produkcji: {prod.data_produkcji or "–"}',
+        f'Potwierdził:    {request.user.get_full_name() or request.user.username}',
+        '',
+        f'Otwórz aplikację: {settings.FIRSTTRACK_APP_URL}',
+        '',
+        '-- FirstTrack, H. & J. Brüggen KG --',
+    ])
+    _send_and_log(prod, subject, body, sorted(_notification_pool_emails()))
+
+    messages.success(request, 'Data produkcji została potwierdzona i zablokowana do edycji.')
+    return redirect('production_detail', pk=pk)
+
+
 # ──────────────────────────────────────────────
 # Szczegóły produkcji
 # ──────────────────────────────────────────────
@@ -490,6 +658,7 @@ def production_detail(request, pk):
         'checklist_confirmations': confirmations,
         'etap2_ready': _etap2_fully_done(prod),
         'can_release': _can_release(request.user),
+        'can_confirm_production_date': _can_confirm_production_date(request.user),
         'gallery_photos': gallery_photos,
     })
 
@@ -552,6 +721,18 @@ for _field_names, _allowed_depts in CHECKLIST_BEFORE_ROW_FIELDS:
         CHECKLIST_BEFORE_DEPT_STATUS_FIELDS.setdefault(_dept, []).append(_field_names[0])
 
 
+def _can_accept_etap2(user):
+    """Zatwierdzenie Etapu II (przycisk "Zatwierdź Etap II", nie samo
+    zapisanie roboczej checklisty) jest dostępne tylko dla działu R&D - to
+    oni decydują o gotowości do produkcji. Zapisywanie roboczej checklisty
+    (poszczególne wiersze) pozostaje ograniczone per-dział jak dotychczas
+    (patrz _lock_checklist_before_rows_to_department)."""
+    if user.is_staff:
+        return True
+    dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
+    return dept == 'RD'
+
+
 def _stamp_checklist_before_confirmation(cb, user):
     """Osoba, która zapisuje checklistę, "potwierdza" swój dział - imię i
     nazwisko trafia automatycznie do pola confirm_<dział> (bez ręcznego
@@ -582,10 +763,14 @@ def _stamp_checklist_before_confirmation(cb, user):
 def checklist_before(request, pk):
     prod     = get_object_or_404(FirstProduction, pk=pk)
     instance = getattr(prod, 'checklist_before', None)
+    can_accept = _can_accept_etap2(request.user)
 
     form = ChecklistBeforeForm(instance=instance, initial={'packaging_line': prod.packaging_line})
     _lock_checklist_before_rows_to_department(form, request.user)
     if request.method == 'POST':
+        if 'complete' in request.POST and not can_accept:
+            messages.error(request, 'Zatwierdzenie Etapu II jest dostępne tylko dla działu R&D.')
+            return redirect('checklist_before', pk=pk)
         form = ChecklistBeforeForm(request.POST, instance=instance)
         _lock_checklist_before_rows_to_department(form, request.user)
         if form.is_valid():
@@ -604,7 +789,7 @@ def checklist_before(request, pk):
             return redirect('production_detail', pk=pk)
 
     return render(request, 'productions/checklist_before.html', {
-        'form': form, 'production': prod,
+        'form': form, 'production': prod, 'can_accept_etap2': can_accept,
     })
 
 
@@ -737,6 +922,18 @@ def _apply_team_selection(prod, form, field_names):
         prod.save(update_fields=list(field_names))
 
 
+def _can_accept_stage(user, prod):
+    """Zatwierdzenie checklisty sensoryki/pakowania (przejście do kolejnego
+    etapu - przyciski "next"/"complete") jest dostępne tylko dla osoby
+    wskazanej jako akceptująca tę produkcję (FirstProduction.acceptor) -
+    zapisywanie roboczej checklisty pozostaje dostępne dla każdego (z
+    zachowaniem blokad pól wg działu, patrz _lock_team_fields_to_department
+    w forms.py)."""
+    if user.is_staff:
+        return True
+    return bool(prod.acceptor_id) and prod.acceptor_id == user.pk
+
+
 # Etap II krok 1 – sensoryczne
 @login_required
 def checklist_after(request, pk):
@@ -772,8 +969,23 @@ def checklist_after_sensory(request, pk):
 
     sensory_fs = SensoryParamFormSet(queryset=instance.sensory_params.all(), prefix='sensory')
     form = ChecklistAfterSensoryForm(instance=instance, production=prod, user=request.user)
+    can_accept_stage = _can_accept_stage(request.user, prod)
 
     if request.method == 'POST':
+        if 'next' in request.POST and not can_accept_stage:
+            if not prod.acceptor_id:
+                messages.error(
+                    request,
+                    'Nie wskazano osoby akceptującej tę produkcję - uzupełnij pole "Osoba akceptująca" '
+                    'w edycji produkcji, zanim checklista zostanie zatwierdzona.',
+                )
+            else:
+                messages.error(
+                    request,
+                    f'Tylko {prod.acceptor.get_full_name()} (osoba akceptująca tę produkcję) może '
+                    'zatwierdzić tę checklistę i przejść dalej.',
+                )
+            return redirect('checklist_after_sensory', pk=pk)
         form       = ChecklistAfterSensoryForm(request.POST, request.FILES, instance=instance,
                                                 production=prod, user=request.user)
         sensory_fs = SensoryParamFormSet(request.POST, queryset=instance.sensory_params.all(), prefix='sensory')
@@ -816,6 +1028,7 @@ def checklist_after_sensory(request, pk):
         'production': prod,
         'checklist': instance,
         'sensory_locked': sensory_locked,
+        'can_accept_stage': can_accept_stage,
         'team_sig_fields': _stage_sig_fields(prod, SENSORY_SIG_FIELDS),
         'sl_field': _sl_photo_field(prod),
         'link_form': link_form,
@@ -946,9 +1159,24 @@ def checklist_after_packaging(request, pk):
                 if not getattr(instance, fname)]
     sl_role, sl_fname, sl_person = _sl_photo_field(prod)
     sl_needs_photo = bool(sl_person and not getattr(instance, sl_fname))
+    can_accept_stage = _can_accept_stage(request.user, prod)
 
     if request.method == 'POST':
         next_url = request.POST.get('next', '')
+        if 'complete' in request.POST and not can_accept_stage:
+            if not prod.acceptor_id:
+                messages.error(
+                    request,
+                    'Nie wskazano osoby akceptującej tę produkcję - uzupełnij pole "Osoba akceptująca" '
+                    'w edycji produkcji, zanim checklista zostanie zatwierdzona.',
+                )
+            else:
+                messages.error(
+                    request,
+                    f'Tylko {prod.acceptor.get_full_name()} (osoba akceptująca tę produkcję) może '
+                    'zatwierdzić tę checklistę i przejść dalej.',
+                )
+            return redirect(f"{reverse('checklist_after_packaging', args=[pk])}{'?next=' + next_url if next_url else ''}")
         form         = ChecklistAfterPackagingForm(request.POST, request.FILES, instance=instance,
                                                      production=prod, user=request.user)
         packaging_fs = PackagingItemFormSet(request.POST, queryset=instance.packaging_items.all(), prefix='packaging')
@@ -987,6 +1215,7 @@ def checklist_after_packaging(request, pk):
         'sl_role': sl_role,
         'sl_person': sl_person,
         'linked_sensory': linked_sensory,
+        'can_accept_stage': can_accept_stage,
         'step': 2,
         'next_url': next_url,
     })
@@ -1157,9 +1386,7 @@ def send_production_email(request, pk):
         recipients.add(email)
 
     # Stała pula adresów – zawsze przy pierwszej produkcji (zarządzanie → adresy email)
-    recipients.update(
-        NotificationRecipient.objects.filter(active=True).values_list('email', flat=True)
-    )
+    recipients.update(_notification_pool_emails())
 
     # Reszta zespołu przypisanego do tej konkretnej produkcji
     team_fields = [
@@ -1249,9 +1476,7 @@ def _notify_new_productions(productions):
     if not productions:
         return
 
-    recipients = sorted(set(
-        NotificationRecipient.objects.filter(active=True).values_list('email', flat=True)
-    ))
+    recipients = sorted(_notification_pool_emails())
     if not recipients:
         return
 
@@ -1314,9 +1539,7 @@ def _notify_new_productions(productions):
 
 def _production_team_recipients(prod):
     """Stała pula adresów + osoby przypisane do zespołu tej konkretnej produkcji."""
-    recipients = set(
-        NotificationRecipient.objects.filter(active=True).values_list('email', flat=True)
-    )
+    recipients = _notification_pool_emails()
     team_fields = [
         'person_rd', 'person_sc', 'person_ql', 'person_qa',
         'person_sd', 'person_pp', 'person_ce', 'person_te', 'person_sl',
@@ -1334,6 +1557,23 @@ def _bulk_emails_enabled():
     aplikacji. Nie dotyczy przycisku "Wyślij testowy mail" (to świadoma,
     pojedyncza akcja administratora, ma działać niezależnie od trybu)."""
     return EmailSettings.get_solo().bulk_emails_enabled
+
+
+def _notification_pool_emails():
+    """Pula odbiorców zbiorczych powiadomień e-mail: stała lista adresów z
+    Zarządzania (NotificationRecipient, "Adresy email") ORAZ adresy wszystkich
+    aktywnych kont w aplikacji - poza tymi, które administrator jawnie
+    wykluczył z tej puli (UserProfile.notify_in_pool=False, patrz
+    Użytkownicy)."""
+    recipients = set(
+        NotificationRecipient.objects.filter(active=True).values_list('email', flat=True)
+    )
+    recipients.update(
+        User.objects.filter(is_active=True, profile__notify_in_pool=True)
+                    .exclude(email='')
+                    .values_list('email', flat=True)
+    )
+    return recipients
 
 
 def _send_and_log(prod, subject, body, recipients, email_message=None):
@@ -1712,6 +1952,7 @@ def user_edit(request, pk):
         'department': profile.department,
         'is_active':  user.is_active,
         'is_staff':   user.is_staff,
+        'notify_in_pool': profile.notify_in_pool,
     }
     form = UserEditForm(initial=initial)
 
@@ -1726,6 +1967,7 @@ def user_edit(request, pk):
             user.is_staff   = d['is_staff']
             user.save()
             profile.department = d['department']
+            profile.notify_in_pool = d['notify_in_pool']
             profile.save()
             messages.success(request, f'Dane użytkownika {user.get_full_name()} zaktualizowane.')
             return redirect('user_list')
@@ -2017,9 +2259,7 @@ def notification_email_test(request):
     if test_email:
         recipients = [test_email]
     else:
-        recipients = sorted(set(
-            NotificationRecipient.objects.filter(active=True).values_list('email', flat=True)
-        ))
+        recipients = sorted(_notification_pool_emails())
 
     if not recipients:
         messages.error(

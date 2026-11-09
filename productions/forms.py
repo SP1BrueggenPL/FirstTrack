@@ -114,6 +114,9 @@ class UserEditForm(forms.Form):
                                    widget=_sel('form-select'))
     is_active  = forms.BooleanField(label='Konto aktywne', required=False)
     is_staff   = forms.BooleanField(label='Admin', required=False)
+    notify_in_pool = forms.BooleanField(
+        label='Uwzględniaj w zbiorczych powiadomieniach email', required=False,
+    )
 
     def clean_full_name(self):
         return (self.cleaned_data.get('full_name') or '').strip()
@@ -188,7 +191,7 @@ def _person_field(dept_code, label, empty_label='Nie dotyczy'):
 # nadzorujący (poza "komentarz", edytowalny przez każdego). Ten sam wzorzec
 # blokowania (disabled=True) co CHECKLIST_BEFORE_ROW_FIELDS w views.py.
 PRODUCTION_FIELD_DEPT_LOCKS = [
-    (['scope'], ['SC']),
+    (['scope'], ['RD', 'SC']),
     (['data_produkcji', 'zmiany', 'layout', 'typ_produkcji', 'fert_number'], ['SD']),
     (['rd_number', 'recipe', 'crm_project_nr'], ['RD']),
 ]
@@ -267,6 +270,13 @@ class FirstProductionForm(forms.ModelForm):
             if dept not in ('SD', 'CE'):
                 self.fields['acceptor'].disabled = True
 
+        # Po potwierdzeniu daty produkcji przez dział Planowania (SC, patrz
+        # confirm_production_date w views.py) nikt poza adminem nie może już
+        # jej zmienić - niezależnie od działu z PRODUCTION_FIELD_DEPT_LOCKS.
+        if self.instance.pk and self.instance.data_confirmed_at:
+            if not (self.user is not None and self.user.is_staff):
+                self.fields['data_produkcji'].disabled = True
+
     def _user_label(self, user):
         return user.get_full_name() or user.username
 
@@ -276,6 +286,14 @@ class SAPImportForm(forms.Form):
         label='Screenshot z SAP lub tabeli planowania',
         help_text='Obsługiwane: JPG, PNG, BMP, WEBP',
         widget=forms.FileInput(attrs={'class': 'form-control', 'accept': 'image/*'}),
+    )
+
+
+class SAPExcelImportForm(forms.Form):
+    excel_file = forms.FileField(
+        label='Plik Excel (.xlsx)',
+        help_text='Kolumny: Zlecenie, Materiał, Opis/Krótki tekst, Data produkcji',
+        widget=forms.FileInput(attrs={'class': 'form-control', 'accept': '.xlsx'}),
     )
 
 
@@ -434,7 +452,7 @@ class ChecklistAfterSensoryForm(forms.ModelForm):
     # blank=True dostałoby automatycznie doklejoną pustą opcję ("- Select an
     # option -") w RadioSelect, mimo że ma tylko dwie sensowne wartości.
     lab_samples_delivered = forms.ChoiceField(
-        choices=[('tak', 'Tak'), ('nie', 'Nie')], required=False,
+        choices=[('tak', 'Tak'), ('nie', 'Nie'), ('nd', 'Nie dotyczy')], required=False,
         label='Czy dostarczono próbki do laboratorium?',
         widget=forms.RadioSelect(attrs={'class': 'status-radio'}),
     )

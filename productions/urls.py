@@ -8,6 +8,7 @@ urlpatterns = [
     path('nowa/', views.production_new, name='production_new'),
     path('<int:pk>/', views.production_detail, name='production_detail'),
     path('<int:pk>/edytuj/', views.production_edit, name='production_edit'),
+    path('<int:pk>/potwierdz-date/', views.confirm_production_date, name='confirm_production_date'),
     path('<int:pk>/etap1/', views.checklist_before, name='checklist_before'),
     path('<int:pk>/etap2/', views.checklist_after, name='checklist_after'),
     path('<int:pk>/etap2/sensoryczne/', views.checklist_after_sensory, name='checklist_after_sensory'),

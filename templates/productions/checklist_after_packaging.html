@@ -189,9 +189,15 @@
     <button type="submit" name="save" class="btn btn-outline-primary">
       <i class="bi bi-floppy me-1"></i>Zapisz roboczo
     </button>
+    {% if can_accept_stage %}
     <button type="submit" name="complete" class="btn btn-success">
       <i class="bi bi-check2-circle me-1"></i>Zatwierdź Etap III
     </button>
+    {% else %}
+    <span class="btn btn-success disabled" title="Dostępne tylko dla osoby akceptującej tę produkcję">
+      <i class="bi bi-lock me-1"></i>Zatwierdź Etap III
+    </span>
+    {% endif %}
     <a href="{% url 'pdf_etap2' production.pk %}" class="btn btn-outline-dark ms-auto" target="_blank">
       <i class="bi bi-file-earmark-pdf me-1"></i>Pobierz PDF Etap III
     </a>
