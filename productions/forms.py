@@ -423,10 +423,13 @@ def _lock_team_fields_to_department(form, user, field_depts):
     """Każda rola w zespole jest wybierana tylko przez osobę z tego samego
     działu (np. RD nie może wybrać osoby SD) - poza Sprzedażą Lubeck, którą
     wybiera dział SD (SL pracuje zdalnie, nie loguje się do checklisty).
-    Administratorzy (is_staff) mogą edytować wszystko."""
+    Administratorzy (is_staff) i R&D mogą uzupełnić wszystkie role w
+    zespole (R&D koordynuje cały zespół pierwszej produkcji)."""
     if user is None or user.is_staff:
         return
     dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
+    if dept == 'RD':
+        return
     for field_name, allowed_dept in field_depts.items():
         if dept != allowed_dept:
             form.fields[field_name].disabled = True
@@ -494,11 +497,10 @@ class ChecklistAfterPackagingForm(forms.ModelForm):
     person_qa = _person_field('QA', 'QA')
     person_ql = _person_field('QL', 'QL')
     person_ce = _person_field('CE', 'CE')
-    person_sl = _person_field('SL', 'Sprzedaż Lubeck')
 
     def __init__(self, *args, production=None, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        team_fields = ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce', 'person_sl')
+        team_fields = ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce')
         if production is not None:
             # SD/QA/CE są zwykle już wybrane w sensoryce - dla powiązanej pary
             # sensoryka/pakowanie to osobne wiersze FirstProduction, więc bez
@@ -516,12 +518,11 @@ class ChecklistAfterPackagingForm(forms.ModelForm):
     class Meta:
         model = ChecklistAfter
         fields = [
-            *_SIG_FIELD_NAMES, 'photo_sl',
+            *_SIG_FIELD_NAMES,
             'photo_1', 'photo_2', 'photo_3', 'photo_4', 'umk_count',
         ]
         widgets = {
             **_SIG_WIDGETS,
-            'photo_sl':  _SL_PHOTO_WIDGET,
             'umk_count': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Liczba UMK'}),
             'photo_1': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),
             'photo_2': forms.FileInput(attrs={'class': 'form-control form-control-sm', 'accept': 'image/*'}),

@@ -117,8 +117,9 @@
   </div>
 
   <!-- Zespół - SD/QA/CE zwykle już wybrane w sensoryce (podpowiedź, można
-       zmienić); każda rola tylko przez osobę z tego działu (Sprzedaż Lubeck
-       wybiera dział SD). -->
+       zmienić); każda rola tylko przez osobę z tego działu. Sprzedaż Lubeck
+       (zdjęcie zamiast podpisu) jest wyłącznie w sensoryce - nie bierze
+       udziału w pakowaniu. -->
   <div class="card mb-3">
     <div class="card-header"><i class="bi bi-people me-2"></i>Zespół</div>
     <div class="card-body">
@@ -137,9 +138,6 @@
         </div>
         <div class="col-md-4 col-lg-2">
           <label class="form-label fw-semibold small">CE</label>{{ form.person_ce }}
-        </div>
-        <div class="col-md-4 col-lg-2">
-          <label class="form-label fw-semibold small">Sprzedaż Lubeck</label>{{ form.person_sl }}
         </div>
       </div>
     </div>
@@ -168,15 +166,6 @@
       {% else %}
       <p class="text-success small mb-0"><i class="bi bi-check-circle me-1"></i>Wszyscy członkowie zespołu już się podpisali.</p>
       {% endif %}
-    </div>
-  </div>
-
-  <!-- Zdjęcie - Sprzedaż Lubeck (dokumentuje obecność zdjęciem, nie podpisem) -->
-  <div class="card mb-3">
-    <div class="card-header"><i class="bi bi-camera me-2"></i>Zdjęcie - Sprzedaż Lubeck</div>
-    <div class="card-body">
-      {{ form.photo_sl }}
-      {% if checklist.photo_sl %}<img src="{{ checklist.photo_sl.url }}" class="mt-1 rounded border" height="70">{% endif %}
     </div>
   </div>
 
