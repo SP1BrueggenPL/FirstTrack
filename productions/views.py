@@ -937,13 +937,22 @@ def _can_accept_stage(user, prod):
 def _can_accept_sensory_stage(user, prod):
     """Zatwierdzenie sensoryki i przejście do pakowania (Etap III, przycisk
     "next") jest dodatkowo dostępne dla działu R&D - koordynuje cały zespół
-    pierwszej produkcji i może samodzielnie przesunąć ją dalej. Pakowanie
-    (inaczej niż sensoryka) pozostaje dostępne tylko dla akceptującego -
-    patrz _can_accept_stage."""
+    pierwszej produkcji i może samodzielnie przesunąć ją dalej. Pakowanie ma
+    własny, szerszy zestaw uprawnień - patrz _can_accept_packaging_stage."""
     if _can_accept_stage(user, prod):
         return True
     dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
     return dept == 'RD'
+
+
+def _can_accept_packaging_stage(user, prod):
+    """Zatwierdzenie pakowania (Etap III, przycisk "complete") jest
+    dodatkowo dostępne dla działów PP, CE i SD - poza akceptującym i adminem
+    (patrz _can_accept_stage)."""
+    if _can_accept_stage(user, prod):
+        return True
+    dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
+    return dept in ('PP', 'CE', 'SD')
 
 
 # Etap II krok 1 – sensoryczne
@@ -1169,23 +1178,16 @@ def checklist_after_packaging(request, pk):
     # dopiero po zapisaniu formularza).
     unsigned = [(role, fname, pfield, person) for role, fname, pfield, person in all_sigs
                 if not getattr(instance, fname)]
-    can_accept_stage = _can_accept_stage(request.user, prod)
+    can_accept_stage = _can_accept_packaging_stage(request.user, prod)
 
     if request.method == 'POST':
         next_url = request.POST.get('next', '')
         if 'complete' in request.POST and not can_accept_stage:
-            if not prod.acceptor_id:
-                messages.error(
-                    request,
-                    'Nie wskazano osoby akceptującej tę produkcję - uzupełnij pole "Osoba akceptująca" '
-                    'w edycji produkcji, zanim checklista zostanie zatwierdzona.',
-                )
-            else:
-                messages.error(
-                    request,
-                    f'Tylko {prod.acceptor.get_full_name()} (osoba akceptująca tę produkcję) może '
-                    'zatwierdzić tę checklistę i przejść dalej.',
-                )
+            messages.error(
+                request,
+                'Zatwierdzenie pakowania jest dostępne tylko dla osoby akceptującej tę produkcję '
+                'albo dla działów PP, CE i SD.',
+            )
             return redirect(f"{reverse('checklist_after_packaging', args=[pk])}{'?next=' + next_url if next_url else ''}")
         form         = ChecklistAfterPackagingForm(request.POST, request.FILES, instance=instance,
                                                      production=prod, user=request.user)

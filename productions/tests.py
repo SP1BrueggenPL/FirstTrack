@@ -2501,9 +2501,13 @@ class StageAcceptorOnlyTests(TestCase):
         self.assertIsNotNone(self.prod.checklist_after.sensory_completed_at)
 
     def test_non_acceptor_cannot_accept_packaging(self):
+        # Pakowanie dodatkowo dopuszcza PP/CE/SD (patrz
+        # test_sd_pp_ce_can_accept_packaging_without_being_acceptor) - do
+        # sprawdzenia blokady dla kogoś naprawdę spoza tej grupy używamy QA.
         self.prod.scope = 'packaging'
         self.prod.save()
-        self.client.force_login(self.other)
+        ineligible = _make_user('stageineligible', 'QA')
+        self.client.force_login(ineligible)
         self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
         self.prod.refresh_from_db()
         packaging_items = self.prod.checklist_after.packaging_items.all()
@@ -2516,6 +2520,27 @@ class StageAcceptorOnlyTests(TestCase):
         self.assertEqual(resp.status_code, 302)
         self.prod.refresh_from_db()
         self.assertNotEqual(self.prod.status, 'etap2')
+
+    def test_sd_pp_ce_can_accept_packaging_without_being_acceptor(self):
+        for dept in ('SD', 'PP', 'CE'):
+            with self.subTest(dept=dept):
+                prod = FirstProduction.objects.create(
+                    sap_zlecenie=f'pkg-{dept}', product_name='Y', scope='packaging',
+                    acceptor=self.acceptor)
+                user = _make_user(f'pkgdept{dept.lower()}', dept)
+                self.client.force_login(user)
+                self.client.get(f'/{prod.pk}/etap2/pakowanie/')
+                prod.refresh_from_db()
+                packaging_items = prod.checklist_after.packaging_items.all()
+                resp = self.client.post(f'/{prod.pk}/etap2/pakowanie/', {
+                    'packaging-TOTAL_FORMS': str(packaging_items.count()),
+                    'packaging-INITIAL_FORMS': str(packaging_items.count()),
+                    **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+                    'complete': '1',
+                })
+                self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+                prod.refresh_from_db()
+                self.assertEqual(prod.status, 'etap2')
 
     def test_acceptor_can_accept_packaging(self):
         self.prod.scope = 'packaging'
@@ -2646,8 +2671,9 @@ class RDFullTeamAccessTests(TestCase):
 
 class SensoryRDAcceptTests(TestCase):
     """R&D może zaakceptować sensorykę i przejść do pakowania bez bycia
-    formalnie wskazanym jako akceptujący - pakowanie pozostaje ograniczone
-    tylko do akceptującego (patrz StageAcceptorOnlyTests)."""
+    formalnie wskazanym jako akceptujący - R&D nie jest jednak w gronie
+    dodatkowych działów uprawnionych do zatwierdzenia pakowania (akceptujący,
+    PP, CE, SD - patrz StageAcceptorOnlyTests)."""
 
     def setUp(self):
         self.rd = _make_user('sensoryrduser', 'RD')
