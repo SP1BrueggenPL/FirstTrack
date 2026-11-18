@@ -723,14 +723,14 @@ for _field_names, _allowed_depts in CHECKLIST_BEFORE_ROW_FIELDS:
 
 def _can_accept_etap2(user):
     """Zatwierdzenie Etapu II (przycisk "Zatwierdź Etap II", nie samo
-    zapisanie roboczej checklisty) jest dostępne tylko dla działu R&D - to
+    zapisanie roboczej checklisty) jest dostępne dla działów R&D i PP - to
     oni decydują o gotowości do produkcji. Zapisywanie roboczej checklisty
     (poszczególne wiersze) pozostaje ograniczone per-dział jak dotychczas
     (patrz _lock_checklist_before_rows_to_department)."""
     if user.is_staff:
         return True
     dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
-    return dept == 'RD'
+    return dept in ('RD', 'PP')
 
 
 def _stamp_checklist_before_confirmation(cb, user):
@@ -769,7 +769,7 @@ def checklist_before(request, pk):
     _lock_checklist_before_rows_to_department(form, request.user)
     if request.method == 'POST':
         if 'complete' in request.POST and not can_accept:
-            messages.error(request, 'Zatwierdzenie Etapu II jest dostępne tylko dla działu R&D.')
+            messages.error(request, 'Zatwierdzenie Etapu II jest dostępne tylko dla działów R&D i PP.')
             return redirect('checklist_before', pk=pk)
         form = ChecklistBeforeForm(request.POST, instance=instance)
         _lock_checklist_before_rows_to_department(form, request.user)
@@ -903,7 +903,7 @@ def _stage_sig_fields(prod, role_defs):
 
 
 _SENSORY_TEAM_FIELDS = ('person_sd', 'person_qa', 'person_rd', 'person_te', 'person_ce', 'person_sl')
-_PACKAGING_TEAM_FIELDS = ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce', 'person_sl')
+_PACKAGING_TEAM_FIELDS = ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce')
 
 
 def _apply_team_selection(prod, form, field_names):
@@ -932,6 +932,27 @@ def _can_accept_stage(user, prod):
     if user.is_staff:
         return True
     return bool(prod.acceptor_id) and prod.acceptor_id == user.pk
+
+
+def _can_accept_sensory_stage(user, prod):
+    """Zatwierdzenie sensoryki i przejście do pakowania (Etap III, przycisk
+    "next") jest dodatkowo dostępne dla działu R&D - koordynuje cały zespół
+    pierwszej produkcji i może samodzielnie przesunąć ją dalej. Pakowanie ma
+    własny, szerszy zestaw uprawnień - patrz _can_accept_packaging_stage."""
+    if _can_accept_stage(user, prod):
+        return True
+    dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
+    return dept == 'RD'
+
+
+def _can_accept_packaging_stage(user, prod):
+    """Zatwierdzenie pakowania (Etap III, przycisk "complete") jest
+    dodatkowo dostępne dla działów PP, CE i SD - poza akceptującym i adminem
+    (patrz _can_accept_stage)."""
+    if _can_accept_stage(user, prod):
+        return True
+    dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
+    return dept in ('PP', 'CE', 'SD')
 
 
 # Etap II krok 1 – sensoryczne
@@ -969,7 +990,7 @@ def checklist_after_sensory(request, pk):
 
     sensory_fs = SensoryParamFormSet(queryset=instance.sensory_params.all(), prefix='sensory')
     form = ChecklistAfterSensoryForm(instance=instance, production=prod, user=request.user)
-    can_accept_stage = _can_accept_stage(request.user, prod)
+    can_accept_stage = _can_accept_sensory_stage(request.user, prod)
 
     if request.method == 'POST':
         if 'next' in request.POST and not can_accept_stage:
@@ -982,8 +1003,8 @@ def checklist_after_sensory(request, pk):
             else:
                 messages.error(
                     request,
-                    f'Tylko {prod.acceptor.get_full_name()} (osoba akceptująca tę produkcję) może '
-                    'zatwierdzić tę checklistę i przejść dalej.',
+                    f'Tylko {prod.acceptor.get_full_name()} (osoba akceptująca tę produkcję) albo dział '
+                    'R&D może zatwierdzić tę checklistę i przejść dalej.',
                 )
             return redirect('checklist_after_sensory', pk=pk)
         form       = ChecklistAfterSensoryForm(request.POST, request.FILES, instance=instance,
@@ -1157,25 +1178,16 @@ def checklist_after_packaging(request, pk):
     # dopiero po zapisaniu formularza).
     unsigned = [(role, fname, pfield, person) for role, fname, pfield, person in all_sigs
                 if not getattr(instance, fname)]
-    sl_role, sl_fname, sl_person = _sl_photo_field(prod)
-    sl_needs_photo = bool(sl_person and not getattr(instance, sl_fname))
-    can_accept_stage = _can_accept_stage(request.user, prod)
+    can_accept_stage = _can_accept_packaging_stage(request.user, prod)
 
     if request.method == 'POST':
         next_url = request.POST.get('next', '')
         if 'complete' in request.POST and not can_accept_stage:
-            if not prod.acceptor_id:
-                messages.error(
-                    request,
-                    'Nie wskazano osoby akceptującej tę produkcję - uzupełnij pole "Osoba akceptująca" '
-                    'w edycji produkcji, zanim checklista zostanie zatwierdzona.',
-                )
-            else:
-                messages.error(
-                    request,
-                    f'Tylko {prod.acceptor.get_full_name()} (osoba akceptująca tę produkcję) może '
-                    'zatwierdzić tę checklistę i przejść dalej.',
-                )
+            messages.error(
+                request,
+                'Zatwierdzenie pakowania jest dostępne tylko dla osoby akceptującej tę produkcję '
+                'albo dla działów PP, CE i SD.',
+            )
             return redirect(f"{reverse('checklist_after_packaging', args=[pk])}{'?next=' + next_url if next_url else ''}")
         form         = ChecklistAfterPackagingForm(request.POST, request.FILES, instance=instance,
                                                      production=prod, user=request.user)
@@ -1211,9 +1223,6 @@ def checklist_after_packaging(request, pk):
         'production': prod,
         'checklist': instance,
         'unsigned_sig_fields': unsigned,
-        'sl_needs_photo': sl_needs_photo,
-        'sl_role': sl_role,
-        'sl_person': sl_person,
         'linked_sensory': linked_sensory,
         'can_accept_stage': can_accept_stage,
         'step': 2,

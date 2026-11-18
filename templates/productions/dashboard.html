@@ -101,6 +101,7 @@
             <th>Zlecenie</th>
             <th>Materiał</th>
             <th>Produkt</th>
+            <th>Zakres</th>
             <th>Data prod.</th>
             <th>Typ</th>
             <th>Layout</th>
@@ -117,6 +118,7 @@
             <td class="fw-semibold">{{ p.sap_zlecenie|default:"–" }}</td>
             <td>{{ p.sap_material|default:"–" }}</td>
             <td>{{ p.product_name }}</td>
+            <td><span class="badge bg-secondary">{{ p.get_scope_display }}</span></td>
             <td>{{ p.data_produkcji|default:"–" }}</td>
             <td>{% if p.typ_produkcji %}<span class="badge bg-info text-dark">{{ p.typ_produkcji }}</span>{% else %}–{% endif %}</td>
             <td>{{ p.layout|default:"–" }}</td>

@@ -117,8 +117,9 @@
   </div>
 
   <!-- Zespół - SD/QA/CE zwykle już wybrane w sensoryce (podpowiedź, można
-       zmienić); każda rola tylko przez osobę z tego działu (Sprzedaż Lubeck
-       wybiera dział SD). -->
+       zmienić); każda rola tylko przez osobę z tego działu. Sprzedaż Lubeck
+       (zdjęcie zamiast podpisu) jest wyłącznie w sensoryce - nie bierze
+       udziału w pakowaniu. -->
   <div class="card mb-3">
     <div class="card-header"><i class="bi bi-people me-2"></i>Zespół</div>
     <div class="card-body">
@@ -137,9 +138,6 @@
         </div>
         <div class="col-md-4 col-lg-2">
           <label class="form-label fw-semibold small">CE</label>{{ form.person_ce }}
-        </div>
-        <div class="col-md-4 col-lg-2">
-          <label class="form-label fw-semibold small">Sprzedaż Lubeck</label>{{ form.person_sl }}
         </div>
       </div>
     </div>
@@ -171,15 +169,6 @@
     </div>
   </div>
 
-  <!-- Zdjęcie - Sprzedaż Lubeck (dokumentuje obecność zdjęciem, nie podpisem) -->
-  <div class="card mb-3">
-    <div class="card-header"><i class="bi bi-camera me-2"></i>Zdjęcie - Sprzedaż Lubeck</div>
-    <div class="card-body">
-      {{ form.photo_sl }}
-      {% if checklist.photo_sl %}<img src="{{ checklist.photo_sl.url }}" class="mt-1 rounded border" height="70">{% endif %}
-    </div>
-  </div>
-
   <div class="d-flex gap-2">
     {% if not production.is_packaging_only %}
     <a href="{% url 'checklist_after_sensory' production.pk %}" class="btn btn-outline-secondary">
@@ -194,7 +183,7 @@
       <i class="bi bi-check2-circle me-1"></i>Zatwierdź Etap III
     </button>
     {% else %}
-    <span class="btn btn-success disabled" title="Dostępne tylko dla osoby akceptującej tę produkcję">
+    <span class="btn btn-success disabled" title="Dostępne tylko dla osoby akceptującej tę produkcję albo dla działów PP, CE i SD">
       <i class="bi bi-lock me-1"></i>Zatwierdź Etap III
     </span>
     {% endif %}

@@ -1546,10 +1546,14 @@ class TeamSelectionMovedToChecklistTests(TestCase):
     def test_packaging_checklist_shows_team_picker_with_correct_roles(self):
         self.client.force_login(self.sd)
         resp = self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
-        for field in ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce', 'person_sl'):
+        for field in ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce'):
             self.assertContains(resp, f'name="{field}"')
         self.assertNotContains(resp, 'name="person_rd"')
         self.assertNotContains(resp, 'name="person_te"')
+        # Sprzedaż Lubeck (zdjęcie zamiast podpisu) bierze udział tylko w
+        # sensoryce - nie jest już częścią zespołu pakowania.
+        self.assertNotContains(resp, 'name="person_sl"')
+        self.assertNotContains(resp, 'name="photo_sl"')
 
     def _sensory_post(self, extra):
         self.prod.refresh_from_db()
@@ -1565,12 +1569,15 @@ class TeamSelectionMovedToChecklistTests(TestCase):
         data.update(extra)
         return self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', data)
 
-    def test_rd_user_can_pick_only_rd_role(self):
+    def test_rd_user_can_pick_any_role(self):
+        # R&D koordynuje cały zespół pierwszej produkcji i może uzupełnić
+        # każdą rolę (patrz RDFullTeamAccessTests) - inaczej niż pozostałe
+        # działy, ograniczone do własnej roli.
         self.client.force_login(self.rd)
         self._sensory_post({'person_rd': str(self.rd.pk), 'person_sd': str(self.sd.pk)})
         self.prod.refresh_from_db()
         self.assertEqual(self.prod.person_rd_id, self.rd.pk)
-        self.assertIsNone(self.prod.person_sd_id)  # zablokowane - RD nie może wybrać SD
+        self.assertEqual(self.prod.person_sd_id, self.sd.pk)
 
     def test_sd_user_can_pick_sl_role(self):
         self.client.force_login(self.sd)
@@ -2103,7 +2110,7 @@ class TeamPickerNieDotyczyOptionTests(TestCase):
     def test_packaging_person_fields_use_nie_dotyczy_placeholder(self):
         from .forms import ChecklistAfterPackagingForm
         form = ChecklistAfterPackagingForm()
-        for name in ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce', 'person_sl'):
+        for name in ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce'):
             self.assertEqual(form.fields[name].empty_label, 'Nie dotyczy')
 
 
@@ -2378,7 +2385,7 @@ class Etap2AcceptanceRDOnlyTests(TestCase):
         sd = _make_user('etap2sduser3', 'SD')
         self.client.force_login(sd)
         resp = self.client.get(f'/{self.prod.pk}/etap1/')
-        self.assertContains(resp, 'Zatwierdzenie Etapu II jest dostępne tylko dla działu R&amp;D')
+        self.assertContains(resp, 'Zatwierdzenie Etapu II jest dostępne tylko dla działów R&amp;D i PP')
 
 
 class ProductionDateConfirmationTests(TestCase):
@@ -2494,9 +2501,13 @@ class StageAcceptorOnlyTests(TestCase):
         self.assertIsNotNone(self.prod.checklist_after.sensory_completed_at)
 
     def test_non_acceptor_cannot_accept_packaging(self):
+        # Pakowanie dodatkowo dopuszcza PP/CE/SD (patrz
+        # test_sd_pp_ce_can_accept_packaging_without_being_acceptor) - do
+        # sprawdzenia blokady dla kogoś naprawdę spoza tej grupy używamy QA.
         self.prod.scope = 'packaging'
         self.prod.save()
-        self.client.force_login(self.other)
+        ineligible = _make_user('stageineligible', 'QA')
+        self.client.force_login(ineligible)
         self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
         self.prod.refresh_from_db()
         packaging_items = self.prod.checklist_after.packaging_items.all()
@@ -2509,6 +2520,27 @@ class StageAcceptorOnlyTests(TestCase):
         self.assertEqual(resp.status_code, 302)
         self.prod.refresh_from_db()
         self.assertNotEqual(self.prod.status, 'etap2')
+
+    def test_sd_pp_ce_can_accept_packaging_without_being_acceptor(self):
+        for dept in ('SD', 'PP', 'CE'):
+            with self.subTest(dept=dept):
+                prod = FirstProduction.objects.create(
+                    sap_zlecenie=f'pkg-{dept}', product_name='Y', scope='packaging',
+                    acceptor=self.acceptor)
+                user = _make_user(f'pkgdept{dept.lower()}', dept)
+                self.client.force_login(user)
+                self.client.get(f'/{prod.pk}/etap2/pakowanie/')
+                prod.refresh_from_db()
+                packaging_items = prod.checklist_after.packaging_items.all()
+                resp = self.client.post(f'/{prod.pk}/etap2/pakowanie/', {
+                    'packaging-TOTAL_FORMS': str(packaging_items.count()),
+                    'packaging-INITIAL_FORMS': str(packaging_items.count()),
+                    **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+                    'complete': '1',
+                })
+                self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+                prod.refresh_from_db()
+                self.assertEqual(prod.status, 'etap2')
 
     def test_acceptor_can_accept_packaging(self):
         self.prod.scope = 'packaging'
@@ -2542,3 +2574,160 @@ class StageAcceptorOnlyTests(TestCase):
         self.assertEqual(resp.status_code, 302)
         prod.refresh_from_db()
         self.assertIsNone(prod.checklist_after.sensory_completed_at)
+
+
+class DashboardScopeColumnTests(TestCase):
+    """Dashboard pokazuje 'Zakres produkcji' jako osobną kolumnę."""
+
+    def setUp(self):
+        self.user = _make_user('dashuser', 'SD')
+        self.client.force_login(self.user)
+
+    def test_dashboard_shows_scope_column(self):
+        FirstProduction.objects.create(sap_zlecenie='1', product_name='X', scope='packaging')
+        resp = self.client.get('/')
+        self.assertContains(resp, 'Zakres')
+        self.assertContains(resp, 'Tylko pakowanie')
+
+
+class Etap2AcceptancePPTests(TestCase):
+    """Zatwierdzenie Etapu II jest dostępne dla R&D i dodatkowo dla PP."""
+
+    def setUp(self):
+        self.prod = FirstProduction.objects.create(sap_zlecenie='1', product_name='X', scope='full')
+
+    def test_pp_can_complete_etap2(self):
+        pp = _make_user('etap2ppuser', 'PP')
+        self.client.force_login(pp)
+        resp = self.client.post(f'/{self.prod.pk}/etap1/', {'complete': '1'})
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.status, 'etap1')
+
+    def test_other_dept_still_cannot_complete_etap2(self):
+        sd = _make_user('etap2ppsduser', 'SD')
+        self.client.force_login(sd)
+        resp = self.client.post(f'/{self.prod.pk}/etap1/', {'complete': '1'})
+        self.assertEqual(resp.status_code, 302)
+        self.prod.refresh_from_db()
+        self.assertNotEqual(self.prod.status, 'etap1')
+
+
+class RDFullTeamAccessTests(TestCase):
+    """R&D może uzupełnić wszystkie role w zespole (sensoryka i pakowanie),
+    w tym Sprzedaż Lubeck w sensoryce."""
+
+    def setUp(self):
+        self.rd = _make_user('rdteamuser', 'RD')
+        self.prod = FirstProduction.objects.create(sap_zlecenie='1', product_name='X', scope='full')
+
+    def test_rd_sensory_team_fields_not_disabled(self):
+        from .forms import ChecklistAfterSensoryForm
+        form = ChecklistAfterSensoryForm(production=self.prod, user=self.rd)
+        for name in ('person_sd', 'person_qa', 'person_rd', 'person_te', 'person_ce', 'person_sl'):
+            self.assertFalse(form.fields[name].disabled)
+
+    def test_rd_packaging_team_fields_not_disabled(self):
+        from .forms import ChecklistAfterPackagingForm
+        form = ChecklistAfterPackagingForm(production=self.prod, user=self.rd)
+        for name in ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce'):
+            self.assertFalse(form.fields[name].disabled)
+
+    def test_other_dept_sensory_team_fields_still_locked(self):
+        from .forms import ChecklistAfterSensoryForm
+        # SD jest specjalnym przypadkiem - zawsze może wybrać Sprzedaż Lubeck
+        # (patrz _lock_team_fields_to_department), więc do sprawdzenia, że
+        # blokada per-dział wciąż działa dla kogoś innego niż R&D, używamy QA.
+        qa = _make_user('rdteamqauser', 'QA')
+        form = ChecklistAfterSensoryForm(production=self.prod, user=qa)
+        self.assertTrue(form.fields['person_rd'].disabled)
+        self.assertTrue(form.fields['person_sl'].disabled)
+        self.assertFalse(form.fields['person_qa'].disabled)
+
+    def test_sd_can_still_pick_sl_without_being_rd(self):
+        from .forms import ChecklistAfterSensoryForm
+        sd = _make_user('rdteamsduser', 'SD')
+        form = ChecklistAfterSensoryForm(production=self.prod, user=sd)
+        self.assertFalse(form.fields['person_sl'].disabled)
+        self.assertFalse(form.fields['person_sd'].disabled)
+        self.assertTrue(form.fields['person_rd'].disabled)
+
+    def test_rd_can_set_sl_via_sensory_view(self):
+        sl = _make_user('rdteamsl', 'SL')
+        self.client.force_login(self.rd)
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        sensory_params = self.prod.checklist_after.sensory_params.all()
+        self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'person_sl': str(sl.pk),
+            'save': '1',
+        })
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.person_sl_id, sl.pk)
+
+
+class SensoryRDAcceptTests(TestCase):
+    """R&D może zaakceptować sensorykę i przejść do pakowania bez bycia
+    formalnie wskazanym jako akceptujący - R&D nie jest jednak w gronie
+    dodatkowych działów uprawnionych do zatwierdzenia pakowania (akceptujący,
+    PP, CE, SD - patrz StageAcceptorOnlyTests)."""
+
+    def setUp(self):
+        self.rd = _make_user('sensoryrduser', 'RD')
+        self.prod = FirstProduction.objects.create(sap_zlecenie='1', product_name='X', scope='full')
+
+    def _sensory_params(self):
+        self.prod.refresh_from_db()
+        return self.prod.checklist_after.sensory_params.all()
+
+    def test_rd_can_accept_sensory_without_being_acceptor(self):
+        self.client.force_login(self.rd)
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        sensory_params = self._sensory_params()
+        resp = self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'next': '1',
+        })
+        self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
+        self.prod.refresh_from_db()
+        self.assertIsNotNone(self.prod.checklist_after.sensory_completed_at)
+
+    def test_rd_cannot_accept_packaging_without_being_acceptor(self):
+        self.prod.scope = 'packaging'
+        self.prod.save()
+        self.client.force_login(self.rd)
+        self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
+        self.prod.refresh_from_db()
+        packaging_items = self.prod.checklist_after.packaging_items.all()
+        resp = self.client.post(f'/{self.prod.pk}/etap2/pakowanie/', {
+            'packaging-TOTAL_FORMS': str(packaging_items.count()),
+            'packaging-INITIAL_FORMS': str(packaging_items.count()),
+            **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            'complete': '1',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.prod.refresh_from_db()
+        self.assertNotEqual(self.prod.status, 'etap2')
+
+
+class SLRemovedFromPackagingTests(TestCase):
+    """Sprzedaż Lubeck (wybór osoby i zdjęcie) bierze udział tylko w
+    sensoryce - nie jest już częścią checklisty pakowania."""
+
+    def test_packaging_form_has_no_sl_fields(self):
+        from .forms import ChecklistAfterPackagingForm
+        form = ChecklistAfterPackagingForm()
+        self.assertNotIn('person_sl', form.fields)
+        self.assertNotIn('photo_sl', form.fields)
+
+    def test_sensory_form_still_has_sl_fields(self):
+        from .forms import ChecklistAfterSensoryForm
+        form = ChecklistAfterSensoryForm()
+        self.assertIn('person_sl', form.fields)
+        self.assertIn('photo_sl', form.fields)
