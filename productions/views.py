@@ -285,6 +285,24 @@ Wyciągnij WSZYSTKIE wiersze danych i zwróć je jako JSON array. Pomiń wiersz 
 oraz ewentualny wiersz podsumowania/sum na dole tabeli (np. wyróżniony innym kolorem,
 z samymi sumami ilości) - to NIE jest wiersz zlecenia.
 
+SPOSÓB PRACY - to najważniejsza część tego zadania, bo w praktyce najczęstszym błędem
+jest "zgubienie" wyrównania wierszy w gęstej tabeli i przypisanie wartości z jednego
+wiersza do innego:
+1. Przejdź przez tabelę dokładnie jeden wiersz na raz, od góry do dołu.
+2. Dla KAŻDEGO wiersza osobno zlokalizuj go najpierw po całej linii poziomej (wszystkie
+   komórki tego samego wiersza mają tę samą wysokość/linię bazową), a dopiero potem
+   odczytaj z niej numer zlecenia, materiału, opis i datę - nigdy nie odczytuj jednej
+   kolumny dla wszystkich wierszy naraz, bo to właśnie prowadzi do pomyłek wyrównania.
+   Kolumny "Zakład" (zwykle stała wartość, np. "4000") i "Kontrola" są dobrym wizualnym
+   punktem odniesienia pozwalającym potwierdzić, że wciąż czytasz właściwy wiersz.
+3. Zanim przejdziesz do kolejnego wiersza, zapamiętaj wartości właśnie odczytane - numer
+   zlecenia i numer materiału w DOWOLNYCH dwóch różnych wierszach tej tabeli praktycznie
+   nigdy nie są identyczne. Jeśli wartość, którą właśnie odczytałeś, jest identyczna z
+   wartością z poprzedniego wiersza, to prawie na pewno pomyłka wyrównania - wróć i
+   odczytaj ten wiersz jeszcze raz, dokładniej.
+4. Na koniec policz wiersze danych widoczne na zrzucie i upewnij się, że zwracasz
+   dokładnie tyle samo obiektów w JSON - ani więcej, ani mniej.
+
 Każdy wiersz to obiekt z dokładnie tymi polami:
 - sap_zlecenie    - numer z kolumny "Zlecenie", zwykle 8-cyfrowa liczba (np. "11366717").
                     Przepisz cyfra po cyfrze, nie zgaduj.
@@ -294,8 +312,10 @@ Każdy wiersz to obiekt z dokładnie tymi polami:
                     razem z ewentualnymi oznaczeniami na końcu (np. "QSL", "ZS", "KIB").
 - data_produkcji  - data z kolumny "RozpWgHarm" (rozpoczęcie wg harmonogramu - to jest
                     planowana data produkcji). NIE bierz daty z kolumny "Zak./harm."
-                    (zakończenie wg harmonogramu) - to inna data. Format w tabeli to
-                    zwykle DD.MM.RRRR lub D.MM.RRRR - zamień na RRRR-MM-DD.
+                    (zakończenie wg harmonogramu) - to inna data, przesunięta zwykle o
+                    kilka dni do przodu; przy każdym wierszu świadomie sprawdź, że bierzesz
+                    kolumnę leżącą bliżej lewej strony (RozpWgHarm), nie tę po prawej.
+                    Format w tabeli to zwykle DD.MM.RRRR lub D.MM.RRRR - zamień na RRRR-MM-DD.
 
 Jeśli jakiejś cyfry lub znaku nie jesteś pewien (nieczytelne, zasłonięte, ucięte), zwróć
 pusty string "" dla tego pola zamiast zgadywać - błędna cyfra w numerze zlecenia/materiału
