@@ -2731,3 +2731,41 @@ class SLRemovedFromPackagingTests(TestCase):
         form = ChecklistAfterSensoryForm()
         self.assertIn('person_sl', form.fields)
         self.assertIn('photo_sl', form.fields)
+
+
+class ImportSapEditablePreviewTests(TestCase):
+    """Komórki w tabeli podglądu importu SAP (zlecenie/materiał/opis/data)
+    są edytowalne - błąd odczytu (AI albo Excel) da się poprawić na miejscu
+    przed zatwierdzeniem, bez wgrywania pliku jeszcze raz."""
+
+    def setUp(self):
+        self.user = _make_user('importeditableuser', 'SD')
+        self.client.force_login(self.user)
+
+    def _xlsx_upload(self, rows):
+        import openpyxl
+        from io import BytesIO
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(['Zlecenie', 'Materiał', 'Opis/Krótki tekst', 'Data produkcji'])
+        for row in rows:
+            ws.append(list(row))
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return SimpleUploadedFile(
+            'sap.xlsx', buf.read(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+    def test_preview_rows_render_as_editable_inputs(self):
+        xlsx = self._xlsx_upload([('11366717', '124886', 'Produkt X', '02.11.2026')])
+        resp = self.client.post('/import-sap/', {'excel_file': xlsx})
+        self.assertEqual(resp.status_code, 200)
+        for field in ('sap_zlecenie', 'sap_material', 'product_name', 'data_produkcji'):
+            self.assertContains(resp, f'data-field="{field}"')
+        self.assertContains(resp, 'row-edit-input')
+        self.assertContains(resp, 'value="11366717"')
+        self.assertContains(resp, 'value="124886"')
+        self.assertContains(resp, 'value="Produkt X"')
+        self.assertContains(resp, 'value="2026-11-02"')

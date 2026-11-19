@@ -89,7 +89,7 @@
                   <th>Zlecenie</th>
                   <th>Materiał</th>
                   <th>Opis / Krótki tekst</th>
-                  <th>Data prod.</th>
+                  <th style="width:140px">Data prod.</th>
                   <th style="width:170px">Zakres</th>
                   <th></th>
                 </tr>
@@ -97,10 +97,26 @@
               <tbody>
                 {% for row in extracted %}
                 <tr>
-                  <td class="fw-semibold">{{ row.sap_zlecenie|default:"–" }}</td>
-                  <td>{{ row.sap_material|default:"–" }}</td>
-                  <td>{{ row.product_name|default:"–" }}</td>
-                  <td>{{ row.data_produkcji|default:"–" }}</td>
+                  <td>
+                    <input type="text" class="form-control form-control-sm row-edit-input"
+                           data-idx="{{ forloop.counter0 }}" data-field="sap_zlecenie"
+                           value="{{ row.sap_zlecenie|default:'' }}">
+                  </td>
+                  <td>
+                    <input type="text" class="form-control form-control-sm row-edit-input"
+                           data-idx="{{ forloop.counter0 }}" data-field="sap_material"
+                           value="{{ row.sap_material|default:'' }}">
+                  </td>
+                  <td>
+                    <input type="text" class="form-control form-control-sm row-edit-input"
+                           data-idx="{{ forloop.counter0 }}" data-field="product_name"
+                           value="{{ row.product_name|default:'' }}">
+                  </td>
+                  <td>
+                    <input type="date" class="form-control form-control-sm row-edit-input"
+                           data-idx="{{ forloop.counter0 }}" data-field="data_produkcji"
+                           value="{{ row.data_produkcji|default:'' }}">
+                  </td>
                   <td>
                     <select class="form-select form-select-sm row-scope-select" data-idx="{{ forloop.counter0 }}">
                       {% for value, label in scope_choices %}
@@ -123,7 +139,10 @@
             <button class="btn btn-success btn-sm" id="add-all-btn">
               <i class="bi bi-plus-circle me-1"></i>Dodaj wszystkie (<span id="remaining-count">{{ extracted|length }}</span>) – jeden mail
             </button>
-            <small class="text-muted">albo kliknij <i class="bi bi-dash-lg"></i> przy wierszu, żeby go pominąć i nie dodawać</small>
+            <small class="text-muted">
+              Zauważyłeś błąd? Popraw komórkę wprost w tabeli przed dodaniem - albo kliknij
+              <i class="bi bi-dash-lg"></i>, żeby pominąć cały wiersz i nie dodawać.
+            </small>
           </div>
         </div>
         <div id="all-done-msg" class="p-4 text-center text-muted d-none">
@@ -188,10 +207,24 @@ function showSkippedFeedback(text) {
   box.prepend(div);
 }
 
+// Pola w tabeli podglądu są edytowalne (patrz input.row-edit-input) - zamiast
+// pobierać dane wyciągnięte przez AI wprost z extractedData (które mogą być
+// już nieaktualne po ręcznej poprawce literówki w komórce), zawsze czytamy
+// bieżącą wartość z inputów/selecta w DOM.
+function getRowData(idx) {
+  const row = Object.assign({}, extractedData[idx]);
+  document.querySelectorAll('.row-edit-input[data-idx="' + idx + '"]').forEach(function(input) {
+    row[input.dataset.field] = input.value;
+  });
+  const select = document.querySelector('.row-scope-select[data-idx="' + idx + '"]');
+  if (select) row.scope = select.value;
+  return row;
+}
+
 document.querySelectorAll('.skip-row-btn').forEach(function(btn) {
   btn.addEventListener('click', function() {
     const idx = parseInt(this.dataset.idx, 10);
-    const row = extractedData[idx];
+    const row = getRowData(idx);
     remainingIndices.delete(idx);
     showSkippedFeedback('Pominięto: ' + (row.product_name || row.sap_zlecenie || 'wiersz'));
     const tr = this.closest('tr');
@@ -206,12 +239,7 @@ document.querySelectorAll('.skip-row-btn').forEach(function(btn) {
 
 document.getElementById('add-all-btn').addEventListener('click', function() {
   const rows = Array.from(remainingIndices).sort(function(a, b) { return a - b; })
-    .map(function(i) {
-      const row = extractedData[i];
-      const select = document.querySelector('.row-scope-select[data-idx="' + i + '"]');
-      if (select) row.scope = select.value;
-      return row;
-    });
+    .map(function(i) { return getRowData(i); });
   if (rows.length === 0) return;
   if (!confirm('Dodać ' + rows.length + ' produkcji naraz? Zostanie wysłany jeden zbiorczy mail.')) return;
   const btn = this;
