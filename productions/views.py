@@ -20,17 +20,18 @@ from django.views.decorators.http import require_POST
 from django.contrib.auth.decorators import login_required
 
 from .models import (
-    FirstProduction, ChecklistBefore, ChecklistAfter,
-    EmailLog, EmailSettings, UserProfile, NotificationRecipient, DEPT_CHOICES,
+    FirstProduction, ChecklistBefore, ChecklistAfter, PostReleaseChecklist,
+    EmailLog, EmailSettings, UserProfile, NotificationRecipient, DEPT_CHOICES, ITEM_STATUS,
 )
 from .forms import (
     FirstProductionForm, SAPImportForm, SAPExcelImportForm,
     ChecklistBeforeForm,
     ChecklistAfterSensoryForm, ChecklistAfterPackagingForm, ChecklistAfterAcceptanceForm,
-    ChecklistAfterHeaderForm, LinkPackagingForm,
+    ChecklistAfterHeaderForm, LinkPackagingForm, PostReleaseChecklistForm,
     SensoryParamFormSet, PackagingItemFormSet,
     UserCreateForm, UserEditForm, UserChipForm, UserImportRowForm, UserBulkImportForm,
     NotificationRecipientForm,
+    SENSORY_TEAM_FIELD_DEPTS, PACKAGING_TEAM_FIELD_DEPTS,
 )
 
 logger = logging.getLogger(__name__)
@@ -534,7 +535,11 @@ def production_edit(request, pk):
     if request.method == 'POST':
         form = FirstProductionForm(request.POST, request.FILES, instance=prod, user=request.user)
         if form.is_valid():
+            date_changed = 'data_produkcji' in form.changed_data
+            old_date = prod.data_produkcji
             prod = form.save()
+            if date_changed:
+                _notify_production_date_changed(prod, request.user, old_date)
             if prod.acceptor and not prod.acceptor_email:
                 prod.acceptor_email = prod.acceptor.email
                 prod.save(update_fields=['acceptor_email'])
@@ -599,6 +604,27 @@ def confirm_production_date(request, pk):
     return redirect('production_detail', pk=pk)
 
 
+def _notify_production_date_changed(prod, user, old_date):
+    """Data produkcji jest na tyle istotna (harmonogram, zespół, dział
+    Planowania), że każda jej zmiana zapisana w formularzu produkcji wysyła
+    powiadomienie do puli - również wtedy, gdy zmienia ją SC mimo wcześniej
+    potwierdzonej daty (patrz FirstProductionForm.__init__)."""
+    dept = getattr(getattr(user, 'profile', None), 'department', '') or '–'
+    subject = f'[FirstTrack] Zmieniono datę produkcji: {prod.product_name}'
+    body = '\n'.join([
+        f'Dział {dept} zmienił datę produkcji dla: {prod.product_name}',
+        f'Zlecenie SAP:    {prod.sap_zlecenie or "–"}',
+        f'Poprzednia data: {old_date or "–"}',
+        f'Nowa data:       {prod.data_produkcji or "–"}',
+        f'Zmienił:         {user.get_full_name() or user.username}',
+        '',
+        f'Otwórz aplikację: {settings.FIRSTTRACK_APP_URL}',
+        '',
+        '-- FirstTrack, H. & J. Brüggen KG --',
+    ])
+    _send_and_log(prod, subject, body, sorted(_notification_pool_emails()))
+
+
 # ──────────────────────────────────────────────
 # Szczegóły produkcji
 # ──────────────────────────────────────────────
@@ -619,7 +645,11 @@ def production_detail(request, pk):
     elif request.method == 'POST' and 'save_basic' in request.POST:
         edit_form = FirstProductionForm(request.POST, instance=prod, user=request.user)
         if edit_form.is_valid():
-            edit_form.save()
+            date_changed = 'data_produkcji' in edit_form.changed_data
+            old_date = prod.data_produkcji
+            saved_prod = edit_form.save()
+            if date_changed:
+                _notify_production_date_changed(saved_prod, request.user, old_date)
             messages.success(request, 'Dane produkcji zaktualizowane.')
             return redirect('production_detail', pk=pk)
     else:
@@ -679,6 +709,8 @@ def production_detail(request, pk):
         'etap2_ready': _etap2_fully_done(prod),
         'can_release': _can_release(request.user),
         'can_confirm_production_date': _can_confirm_production_date(request.user),
+        'can_fill_post_release': _can_fill_post_release(request.user),
+        'post_release_checklist': getattr(prod, 'post_release_checklist', None),
         'gallery_photos': gallery_photos,
     })
 
@@ -740,6 +772,19 @@ for _field_names, _allowed_depts in CHECKLIST_BEFORE_ROW_FIELDS:
     for _dept in _allowed_depts:
         CHECKLIST_BEFORE_DEPT_STATUS_FIELDS.setdefault(_dept, []).append(_field_names[0])
 
+# Wszystkie pola Tak/Nie/Nie dotyczy checklisty przed produkcją - zatwierdzenie
+# (patrz checklist_before) jest możliwe dopiero, gdy każde z nich ma wybraną
+# wartość (nie '-' / puste).
+CHECKLIST_BEFORE_STATUS_FIELDS = [
+    'order_updated_status', 'pwpr_status', 'analysis_form_status', 'zero_sample_status',
+    'production_card_status', 'machine_suitable_status', 'packaging_layout_status',
+    'collective_label_status', 'date_format_status', 'bom_set_status', 'additional_samples_status',
+]
+
+
+def _checklist_before_fully_filled(cb):
+    return all(getattr(cb, f, '') for f in CHECKLIST_BEFORE_STATUS_FIELDS)
+
 
 def _can_accept_etap2(user):
     """Zatwierdzenie Etapu II (przycisk "Zatwierdź Etap II", nie samo
@@ -784,6 +829,15 @@ def checklist_before(request, pk):
     prod     = get_object_or_404(FirstProduction, pk=pk)
     instance = getattr(prod, 'checklist_before', None)
     can_accept = _can_accept_etap2(request.user)
+    cb_locked = bool(instance and instance.completed_at)
+
+    if request.method == 'POST' and cb_locked:
+        messages.error(
+            request,
+            'Checklista przed produkcją została już zatwierdzona - ponowna edycja '
+            'jest możliwa tylko po skierowaniu produkcji do korekty na tym etapie.',
+        )
+        return redirect('checklist_before', pk=pk)
 
     form = ChecklistBeforeForm(instance=instance, initial={'packaging_line': prod.packaging_line})
     _lock_checklist_before_rows_to_department(form, request.user)
@@ -796,6 +850,13 @@ def checklist_before(request, pk):
         if form.is_valid():
             cb = form.save(commit=False)
             cb.production = prod
+            if 'complete' in request.POST and not _checklist_before_fully_filled(cb):
+                messages.error(
+                    request,
+                    'Zatwierdzenie Etapu II jest możliwe dopiero po uzupełnieniu '
+                    'wszystkich pól Tak/Nie/Nie dotyczy checklisty.',
+                )
+                return redirect('checklist_before', pk=pk)
             _stamp_checklist_before_confirmation(cb, request.user)
             # Linia pakująca to pole FirstProduction, nie ChecklistBefore -
             # wpisywana tutaj (Etap I), więc zapisywana na produkcji.
@@ -808,8 +869,11 @@ def checklist_before(request, pk):
             messages.success(request, 'Checklista przed produkcją zapisana.')
             return redirect('production_detail', pk=pk)
 
+    if cb_locked:
+        _disable_all_fields(form)
+
     return render(request, 'productions/checklist_before.html', {
-        'form': form, 'production': prod, 'can_accept_etap2': can_accept,
+        'form': form, 'production': prod, 'can_accept_etap2': can_accept, 'cb_locked': cb_locked,
     })
 
 
@@ -922,6 +986,41 @@ def _stage_sig_fields(prod, role_defs):
             for role, sig_field, person_field in role_defs]
 
 
+def _my_sig_field(all_sigs, user):
+    """Pole podpisu (rola/field/osoba) przypisane dokładnie zalogowanemu
+    użytkownikowi - dopasowanie po tożsamości (user.pk), nie po dziale, bo
+    dwie osoby z tego samego działu mogłyby inaczej podpisywać się za
+    siebie nawzajem. Widok podpisywania pokazuje każdemu tylko ten jeden
+    box (patrz checklist_after_sensory/checklist_after_packaging)."""
+    for role, sig_field, person_field, person in all_sigs:
+        if person is not None and person.pk == user.pk:
+            return (role, sig_field, person_field, person)
+    return None
+
+
+def _sig_status(instance, all_sigs):
+    """Lista (rola, osoba, czy_podpisano) do pokazania statusu podpisów bez
+    ujawniania samej treści (obrazu) cudzego podpisu - patrz
+    _lock_sig_fields_to_person niżej."""
+    return [(role, person, bool(getattr(instance, sig_field)))
+            for role, sig_field, person_field, person in all_sigs if person is not None]
+
+
+def _lock_sig_fields_to_person(form, user, all_sigs):
+    """Podpis danej roli może złożyć tylko osoba faktycznie przypisana do
+    niej w zespole (person_<rola> na produkcji) - disabled=True sprawia, że
+    Django ignoruje przesłaną wartość nawet gdyby ktoś odblokował pole lub
+    narysował coś na cudzym (ukrytym w UI) canvasie. Administratorzy
+    (is_staff) mogą uzupełnić podpis każdej roli."""
+    if user is not None and user.is_staff:
+        return
+    for role, sig_field, person_field, person in all_sigs:
+        if sig_field not in form.fields:
+            continue
+        if person is None or user is None or person.pk != user.pk:
+            form.fields[sig_field].disabled = True
+
+
 _SENSORY_TEAM_FIELDS = ('person_sd', 'person_qa', 'person_rd', 'person_te', 'person_ce', 'person_sl')
 _PACKAGING_TEAM_FIELDS = ('person_sd', 'person_pp', 'person_qa', 'person_ql', 'person_ce')
 
@@ -991,9 +1090,36 @@ def _disable_all_fields(form):
         field.disabled = True
 
 
+def _can_view_sensory_checklist(user):
+    """Checklista sensoryki jest dostępna tylko dla działów należących do
+    zespołu sensoryki (patrz SENSORY_TEAM_FIELD_DEPTS) - nie dla każdego
+    zalogowanego użytkownika."""
+    if user.is_staff:
+        return True
+    dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
+    return dept in SENSORY_TEAM_FIELD_DEPTS.values()
+
+
+def _can_view_packaging_checklist(user):
+    """Checklista pakowania jest dostępna tylko dla działów należących do
+    zespołu pakowania (patrz PACKAGING_TEAM_FIELD_DEPTS) - plus R&D, który
+    koordynuje cały zespół pierwszej produkcji i może zaakceptować sensorykę
+    prowadząc od razu do pakowania (patrz _can_accept_sensory_stage)."""
+    if user.is_staff:
+        return True
+    dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
+    return dept in PACKAGING_TEAM_FIELD_DEPTS.values() or dept == 'RD'
+
+
 @login_required
 def checklist_after_sensory(request, pk):
     prod = get_object_or_404(FirstProduction, pk=pk)
+    if not _can_view_sensory_checklist(request.user):
+        messages.error(
+            request,
+            'Checklista sensoryki jest dostępna tylko dla działów należących do zespołu sensoryki.',
+        )
+        return redirect('production_detail', pk=pk)
     if prod.skips_sensory:
         return redirect('checklist_after_packaging', pk=pk)
 
@@ -1008,8 +1134,12 @@ def checklist_after_sensory(request, pk):
         )
         return redirect('checklist_after_sensory', pk=pk)
 
+    all_sigs = _stage_sig_fields(prod, SENSORY_SIG_FIELDS)
+    my_sig_field = _my_sig_field(all_sigs, request.user)
+
     sensory_fs = SensoryParamFormSet(queryset=instance.sensory_params.all(), prefix='sensory')
     form = ChecklistAfterSensoryForm(instance=instance, production=prod, user=request.user)
+    _lock_sig_fields_to_person(form, request.user, all_sigs)
     can_accept_stage = _can_accept_sensory_stage(request.user, prod)
 
     if request.method == 'POST':
@@ -1029,6 +1159,7 @@ def checklist_after_sensory(request, pk):
             return redirect('checklist_after_sensory', pk=pk)
         form       = ChecklistAfterSensoryForm(request.POST, request.FILES, instance=instance,
                                                 production=prod, user=request.user)
+        _lock_sig_fields_to_person(form, request.user, all_sigs)
         sensory_fs = SensoryParamFormSet(request.POST, queryset=instance.sensory_params.all(), prefix='sensory')
         if form.is_valid() and sensory_fs.is_valid():
             ca = form.save(commit=False)
@@ -1036,6 +1167,13 @@ def checklist_after_sensory(request, pk):
             ca.save()
             sensory_fs.save()
             _apply_team_selection(prod, form, _SENSORY_TEAM_FIELDS)
+            if 'next' in request.POST and not all(p.status for p in instance.sensory_params.all()):
+                messages.error(
+                    request,
+                    'Zatwierdzenie jest możliwe dopiero po uzupełnieniu pola Tak/Nie/Nie dotyczy '
+                    'dla każdego parametru sensorycznego.',
+                )
+                return redirect('checklist_after_sensory', pk=pk)
             if 'next' in request.POST:
                 ca.sensory_completed_at = timezone.now()
                 ca.save(update_fields=['sensory_completed_at'])
@@ -1070,7 +1208,9 @@ def checklist_after_sensory(request, pk):
         'checklist': instance,
         'sensory_locked': sensory_locked,
         'can_accept_stage': can_accept_stage,
-        'team_sig_fields': _stage_sig_fields(prod, SENSORY_SIG_FIELDS),
+        'team_sig_fields': all_sigs,
+        'my_sig_field': my_sig_field,
+        'sig_status': _sig_status(instance, all_sigs),
         'sl_field': _sl_photo_field(prod),
         'link_form': link_form,
         'step': 1,
@@ -1179,10 +1319,26 @@ def unlink_production(request, pk):
 @login_required
 def checklist_after_packaging(request, pk):
     prod = get_object_or_404(FirstProduction, pk=pk)
+    if not _can_view_packaging_checklist(request.user):
+        messages.error(
+            request,
+            'Checklista pakowania jest dostępna tylko dla działów należących do zespołu pakowania.',
+        )
+        return redirect('production_detail', pk=pk)
     if prod.is_sensory_only:
         return redirect('checklist_after_sensory', pk=pk)
 
     instance = _get_or_create_checklist_after(prod)
+    packaging_locked = bool(instance.completed_at)
+
+    if request.method == 'POST' and packaging_locked:
+        messages.error(
+            request,
+            'Pakowanie zostało już raz uzupełnione i zaakceptowane - ponowna edycja '
+            'jest możliwa tylko po skierowaniu produkcji do korekty na tym etapie.',
+        )
+        return redirect('checklist_after_packaging', pk=pk)
+
     packaging_fs = PackagingItemFormSet(queryset=instance.packaging_items.all(), prefix='packaging')
     form = ChecklistAfterPackagingForm(instance=instance, production=prod, user=request.user)
     # Dostępne też ze strony powiązanej produkcji sensorycznej ("Pakowanie
@@ -1192,6 +1348,8 @@ def checklist_after_packaging(request, pk):
     next_url = request.GET.get('next', '')
 
     all_sigs = _stage_sig_fields(prod, PACKAGING_SIG_FIELDS)
+    my_sig_field = _my_sig_field(all_sigs, request.user)
+    _lock_sig_fields_to_person(form, request.user, all_sigs)
     # Wiersz zostaje w liście dopóki dany dział jeszcze się nie podpisał -
     # nawet zanim ktokolwiek wybierze osobę w "Zespole" (pole podpisu ma się
     # pojawić od razu po wyborze, patrz JS w _sig_canvas_js.html, a nie
@@ -1211,9 +1369,19 @@ def checklist_after_packaging(request, pk):
             return redirect(f"{reverse('checklist_after_packaging', args=[pk])}{'?next=' + next_url if next_url else ''}")
         form         = ChecklistAfterPackagingForm(request.POST, request.FILES, instance=instance,
                                                      production=prod, user=request.user)
+        _lock_sig_fields_to_person(form, request.user, all_sigs)
         packaging_fs = PackagingItemFormSet(request.POST, queryset=instance.packaging_items.all(), prefix='packaging')
         if form.is_valid() and packaging_fs.is_valid():
             ca = form.save(commit=False)
+            if 'complete' in request.POST and not all(
+                f.cleaned_data.get('status') for f in packaging_fs.forms
+            ):
+                messages.error(
+                    request,
+                    'Zatwierdzenie jest możliwe dopiero po uzupełnieniu pola Tak/Nie/Nie dotyczy '
+                    'dla każdej pozycji pakowania.',
+                )
+                return redirect(f"{reverse('checklist_after_packaging', args=[pk])}{'?next=' + next_url if next_url else ''}")
             if 'complete' in request.POST:
                 ca.completed_at = timezone.now()
                 prod.status = 'etap2'
@@ -1237,14 +1405,23 @@ def checklist_after_packaging(request, pk):
             'sensory_params': linked_ca.sensory_params.all() if linked_ca else [],
         }
 
+    if packaging_locked:
+        _disable_all_fields(form)
+        for f in packaging_fs.forms:
+            _disable_all_fields(f)
+
     return render(request, 'productions/checklist_after_packaging.html', {
         'form': form,
         'packaging_fs': packaging_fs,
         'production': prod,
         'checklist': instance,
         'unsigned_sig_fields': unsigned,
+        'all_sig_fields': all_sigs,
+        'my_sig_field': my_sig_field,
+        'sig_status': _sig_status(instance, all_sigs),
         'linked_sensory': linked_sensory,
         'can_accept_stage': can_accept_stage,
+        'packaging_locked': packaging_locked,
         'step': 2,
         'next_url': next_url,
     })
@@ -1270,11 +1447,20 @@ def _linked_target_for_stage(prod, stage):
 
 def _can_release(user):
     """Etap IV (akceptacja SD, zwolnienie do sprzedaży) jest dostępny tylko
-    dla działów SD i CE - grupy, która faktycznie zwalnia produkcję."""
+    dla działu SD - grupy, która faktycznie zwalnia produkcję."""
     if user.is_staff:
         return True
     dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
-    return dept in ('SD', 'CE')
+    return dept == 'SD'
+
+
+def _can_fill_post_release(user):
+    """Etap V (kontrola kartonów u klienta, po Zwolnieniu) jest niezależnym,
+    opcjonalnym krokiem wypełnianym wyłącznie przez Sprzedaż (SD)."""
+    if user.is_staff:
+        return True
+    dept = getattr(getattr(user, 'profile', None), 'department', '') or ''
+    return dept == 'SD'
 
 
 @login_required
@@ -1284,7 +1470,7 @@ def release_production(request, pk):
         messages.error(
             request,
             'Etap IV (Akceptacja SD i zwolnienie do sprzedaży) jest dostępny '
-            'tylko dla działów SD i CE.',
+            'tylko dla działu SD.',
         )
         return redirect('production_detail', pk=pk)
     instance = _get_or_create_checklist_after(prod)
@@ -1381,6 +1567,46 @@ def release_production(request, pk):
         'sl_person': sl_person,
         'sl_photo': sl_photo,
         'step': 3,
+    })
+
+
+@login_required
+def post_release_checklist(request, pk):
+    """Etap V - kontrola kartonów u klienta po Zwolnieniu. Niezależny i
+    opcjonalny - nie blokuje ani nie jest blokowany przez żaden inny etap,
+    dostępny dopiero po Zwolnieniu (status 'zwolniona'), wypełniany
+    wyłącznie przez Sprzedaż (SD)."""
+    prod = get_object_or_404(FirstProduction, pk=pk)
+    if not _can_fill_post_release(request.user):
+        messages.error(
+            request,
+            'Etap V (kontrola kartonów u klienta) jest dostępny tylko dla działu SD.',
+        )
+        return redirect('production_detail', pk=pk)
+    if prod.status != 'zwolniona':
+        messages.error(
+            request,
+            'Etap V jest dostępny dopiero po Zwolnieniu produkcji do sprzedaży (Etap IV).',
+        )
+        return redirect('production_detail', pk=pk)
+
+    instance = getattr(prod, 'post_release_checklist', None)
+    form = PostReleaseChecklistForm(instance=instance)
+
+    if request.method == 'POST':
+        form = PostReleaseChecklistForm(request.POST, instance=instance)
+        if form.is_valid():
+            pr = form.save(commit=False)
+            pr.production = prod
+            pr.completed_at = timezone.now()
+            pr.completed_by = request.user
+            pr.save()
+            messages.success(request, 'Kontrola kartonów u klienta zapisana.')
+            _notify_safely(_send_post_release_email, prod, pr, request.user)
+            return redirect('production_detail', pk=pk)
+
+    return render(request, 'productions/post_release_checklist.html', {
+        'form': form, 'production': prod, 'checklist': instance,
     })
 
 
@@ -1845,6 +2071,31 @@ def _send_correction_email(prod, ca):
         f'Komentarz SD: {ca.correction_comment or "–"}',
         '',
         f'Checklista etapu „{stage_label}" została zresetowana - uzupełnij ją ponownie.',
+        '',
+        '-- FirstTrack, H. & J. Brüggen KG --',
+    ])
+    _send_and_log(prod, subject, body, recipients)
+
+
+def _send_post_release_email(prod, pr, user):
+    """Etap V - kontrola kartonów u klienta (patrz post_release_checklist w
+    views.py). Niezależny od reszty procesu - informuje zespół o wyniku
+    kontroli, nie zmienia statusu produkcji."""
+    recipients = _production_team_recipients(prod)
+    if not recipients:
+        return
+    status_labels = dict(ITEM_STATUS)
+    subject = f'[FirstTrack] Kontrola kartonów u klienta – {prod.product_name}'
+    body = '\n'.join([
+        f'Sprzedaż (SD) potwierdziła kontrolę kartonów dostarczonych do klienta dla '
+        f'produkcji „{prod.product_name}" (zlecenie SAP {prod.sap_zlecenie or "–"}).',
+        '',
+        f'Odstawione:  {status_labels.get(pr.delivered_status, "–")}',
+        f'Sprawdzone:  {status_labels.get(pr.checked_status, "–")}',
+        f'Stan ok:     {status_labels.get(pr.condition_status, "–")}',
+        f'Komentarz:   {pr.comment or "–"}',
+        '',
+        f'Zgłosił: {user.get_full_name() or user.username}',
         '',
         '-- FirstTrack, H. & J. Brüggen KG --',
     ])

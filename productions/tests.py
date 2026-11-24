@@ -25,6 +25,25 @@ def _make_user(username, dept, email=None):
     return user
 
 
+# Zatwierdzenie checklist (Etap II przed produkcją / sensoryka / pakowanie)
+# wymaga teraz wypełnienia wszystkich pól Tak/Nie/Nie dotyczy - testy, które
+# tylko klikają "Zatwierdź"/"Dalej", muszą jawnie dosłać te pola.
+_FULL_CHECKLIST_BEFORE_STATUS = {
+    f'{field}': 'tak' for field in [
+        'order_updated_status', 'pwpr_status', 'analysis_form_status', 'zero_sample_status',
+        'production_card_status', 'machine_suitable_status', 'packaging_layout_status',
+        'collective_label_status', 'date_format_status', 'bom_set_status', 'additional_samples_status',
+    ]
+}
+
+
+def _formset_status_fields(prefix, queryset):
+    """Pola 'status': 'tak' dla każdego wiersza formsetu (parametry
+    sensoryczne / pozycje pakowania) - wymagane przez checklisty, żeby dało
+    się zatwierdzić dany etap."""
+    return {f'{prefix}-{i}-status': 'tak' for i in range(queryset.count())}
+
+
 class FirstProductionFormRequiredFieldsTests(TestCase):
     """Pola "Szczegółowe informacje"/"Numery" (poza krótkim tekstem materiału)
     są opcjonalne dla każdego działu i każdego zakresu produkcji - produkcję
@@ -144,6 +163,7 @@ class ScopeRoutingAndLinkingTests(TestCase):
             'packaging-TOTAL_FORMS': str(packaging_items.count()),
             'packaging-INITIAL_FORMS': str(packaging_items.count()),
             **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            **{f'packaging-{i}-status': 'tak' for i, pi in enumerate(packaging_items)},
             'complete': '1',
         })
         self.assertRedirects(resp, next_url)
@@ -174,6 +194,7 @@ class LinkedProductionCorrectionSyncTests(TestCase):
             'sensory-TOTAL_FORMS': str(sensory_params.count()),
             'sensory-INITIAL_FORMS': str(sensory_params.count()),
             **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            **_formset_status_fields('sensory', sensory_params),
             'next': '1',
         })
 
@@ -184,6 +205,7 @@ class LinkedProductionCorrectionSyncTests(TestCase):
             'packaging-TOTAL_FORMS': str(packaging_items.count()),
             'packaging-INITIAL_FORMS': str(packaging_items.count()),
             **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            **_formset_status_fields('packaging', packaging_items),
             'complete': '1',
         })
         self.sensory.refresh_from_db()
@@ -234,6 +256,7 @@ class LinkedProductionCorrectionSyncTests(TestCase):
             'packaging-TOTAL_FORMS': str(packaging_items.count()),
             'packaging-INITIAL_FORMS': str(packaging_items.count()),
             **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            **_formset_status_fields('packaging', packaging_items),
             'complete': '1',
         })
         resp = self.client.get(f'/{self.sensory.pk}/')
@@ -279,6 +302,7 @@ class LinkedEtap3GatingTests(TestCase):
             'sensory-TOTAL_FORMS': str(sensory_params.count()),
             'sensory-INITIAL_FORMS': str(sensory_params.count()),
             **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            **_formset_status_fields('sensory', sensory_params),
             'next': '1',
         })
         self.sensory.refresh_from_db()
@@ -302,6 +326,7 @@ class LinkedEtap3GatingTests(TestCase):
             'packaging-TOTAL_FORMS': str(packaging_items.count()),
             'packaging-INITIAL_FORMS': str(packaging_items.count()),
             **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            **_formset_status_fields('packaging', packaging_items),
             'complete': '1',
         })
         resp = self.client.get(f'/{self.sensory.pk}/')
@@ -409,6 +434,10 @@ class TeamPhotoTests(TestCase):
         self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
         self.prod.refresh_from_db()
         sensory_params = self.prod.checklist_after.sensory_params.all()
+        # Podpis danej roli może złożyć tylko osoba faktycznie przypisana do
+        # niej w zespole (patrz _lock_sig_fields_to_person w views.py) -
+        # person_rd tej produkcji to self.rd, więc to on musi być zalogowany.
+        self.client.force_login(self.rd)
         self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', {
             'production_date': '2026-08-10',
             'sensory-TOTAL_FORMS': str(sensory_params.count()),
@@ -465,6 +494,7 @@ class TeamPhotoTests(TestCase):
             'sensory-TOTAL_FORMS': str(sensory_params.count()),
             'sensory-INITIAL_FORMS': str(sensory_params.count()),
             **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            **_formset_status_fields('sensory', sensory_params),
             'person_rd': str(self.rd.pk),
             'person_sl': str(self.sl.pk),
             'sig_rd': 'data:image/png;base64,fakesignature',
@@ -490,9 +520,13 @@ class TeamPhotoTests(TestCase):
             'sensory-TOTAL_FORMS': str(sensory_params.count()),
             'sensory-INITIAL_FORMS': str(sensory_params.count()),
             **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            **_formset_status_fields('sensory', sensory_params),
             'sig_rd': 'data:image/png;base64,fakesignature',
             'next': '1',
         }
+        # Podpis RD może złożyć tylko osoba przypisana do tej roli
+        # (person_rd = self.rd, patrz _lock_sig_fields_to_person w views.py).
+        self.client.force_login(self.rd)
         with mock.patch('productions.views._send_sensory_accepted_email',
                          side_effect=RuntimeError('boom')):
             resp = self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', data)
@@ -570,9 +604,13 @@ class ReleaseDecisionWorkflowTests(TestCase):
             person_sd=self.sd, acceptor=self.sd)
         # drive through etap1 + etap2 to reach a completed checklist_after -
         # zatwierdzenie Etapu II jest dostępne tylko dla R&D (patrz
-        # _can_accept_etap2), więc na chwilę logujemy się jako R&D.
+        # _can_accept_etap2), więc na chwilę logujemy się jako R&D. Wszystkie
+        # pola Tak/Nie/Nie dotyczy muszą być wypełnione, żeby dało się
+        # zatwierdzić (patrz item #4) - w realnym procesie wypełniłyby je
+        # poszczególne działy, tutaj od razu zakładamy komplet.
+        ChecklistBefore.objects.create(production=self.prod, **_FULL_CHECKLIST_BEFORE_STATUS)
         self.client.force_login(self.rd)
-        self.client.post(f'/{self.prod.pk}/etap1/', {'complete': '1'})
+        self.client.post(f'/{self.prod.pk}/etap1/', {'complete': '1', **_FULL_CHECKLIST_BEFORE_STATUS})
         self.client.force_login(self.sd)
         ca_url_sensory = f'/{self.prod.pk}/etap2/sensoryczne/'
         self.client.get(ca_url_sensory)
@@ -583,6 +621,7 @@ class ReleaseDecisionWorkflowTests(TestCase):
             'sensory-TOTAL_FORMS': str(sensory_params.count()),
             'sensory-INITIAL_FORMS': str(sensory_params.count()),
             **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            **_formset_status_fields('sensory', sensory_params),
             'person_sd': str(self.sd.pk),
             'next': '1',
         })
@@ -590,6 +629,7 @@ class ReleaseDecisionWorkflowTests(TestCase):
         self.client.post(f'/{self.prod.pk}/etap2/pakowanie/', {
             'packaging-TOTAL_FORMS': str(packaging_items.count()),
             'packaging-INITIAL_FORMS': str(packaging_items.count()),
+            **_formset_status_fields('packaging', packaging_items),
             **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
             'person_sd': str(self.sd.pk),
             'umk_count': '42',
@@ -722,6 +762,15 @@ class ReleaseDecisionWorkflowTests(TestCase):
             'additional_samples_count': '7',
             'save': '1',
         })
+        # Pozostałe wiersze należą do innych działów (zablokowane dla SD/R&D
+        # przez _lock_checklist_before_rows_to_department) - w realnym
+        # procesie każdy dział wypełniłby swój wiersz osobno; tutaj
+        # ustawiamy je bezpośrednio, żeby R&D mogło zatwierdzić Etap II
+        # (wymaga teraz wypełnienia wszystkich pól, patrz item #4).
+        cb = prod.checklist_before
+        for field, value in _FULL_CHECKLIST_BEFORE_STATUS.items():
+            setattr(cb, field, value)
+        cb.save()
         self.client.force_login(self.rd)
         self.client.post(f'/{prod.pk}/etap1/', {'complete': '1'})
         self.client.force_login(self.sd)
@@ -1276,6 +1325,120 @@ class ChecklistBeforeDepartmentLockTests(TestCase):
         self.assertFalse(resp.context['form'].fields['bom_set_status'].disabled)
 
 
+class ChecklistBeforeCompletenessAndLockTests(TestCase):
+    """Zatwierdzenie Etapu II jest możliwe dopiero po wypełnieniu wszystkich
+    pól Tak/Nie/Nie dotyczy (item #4), a po zatwierdzeniu checklista jest
+    zablokowana do edycji (item #7)."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(username='cbadmin', password='x', is_staff=True)
+        self.prod = FirstProduction.objects.create(sap_zlecenie='1', product_name='X', scope='full')
+        self.client.force_login(self.admin)
+
+    def test_complete_blocked_when_fields_missing(self):
+        resp = self.client.post(f'/{self.prod.pk}/etap1/', {
+            'packaging_line': '', 'order_updated_status': 'tak', 'complete': '1',
+        })
+        self.assertRedirects(resp, f'/{self.prod.pk}/etap1/')
+        self.prod.refresh_from_db()
+        self.assertNotEqual(self.prod.status, 'etap1')
+
+    def test_complete_succeeds_when_all_fields_filled(self):
+        self.client.post(f'/{self.prod.pk}/etap1/', {
+            'packaging_line': '', **_FULL_CHECKLIST_BEFORE_STATUS, 'complete': '1',
+        })
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.status, 'etap1')
+        self.assertIsNotNone(self.prod.checklist_before.completed_at)
+
+    def test_completed_checklist_before_is_locked(self):
+        self.client.post(f'/{self.prod.pk}/etap1/', {
+            'packaging_line': '', **_FULL_CHECKLIST_BEFORE_STATUS, 'complete': '1',
+        })
+        resp = self.client.post(f'/{self.prod.pk}/etap1/', {
+            'packaging_line': '', 'order_updated_status': 'nie',
+        })
+        self.assertRedirects(resp, f'/{self.prod.pk}/etap1/')
+        self.prod.checklist_before.refresh_from_db()
+        self.assertEqual(self.prod.checklist_before.order_updated_status, 'tak')
+
+    def test_locked_checklist_before_renders_disabled_fields(self):
+        self.client.post(f'/{self.prod.pk}/etap1/', {
+            'packaging_line': '', **_FULL_CHECKLIST_BEFORE_STATUS, 'complete': '1',
+        })
+        resp = self.client.get(f'/{self.prod.pk}/etap1/')
+        self.assertContains(resp, 'zablokowana')
+        self.assertTrue(resp.context['form'].fields['order_updated_status'].disabled)
+
+
+class PackagingChecklistCompletenessAndLockTests(TestCase):
+    """Zatwierdzenie pakowania wymaga wypełnienia statusu każdej pozycji
+    (item #4) i blokuje dalszą edycję po zatwierdzeniu (item #7)."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(username='pkgadmin', password='x', is_staff=True)
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='packaging', fert_number='F1', recipe='R1')
+        self.client.force_login(self.admin)
+        self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
+        self.prod.refresh_from_db()
+
+    def test_complete_blocked_when_statuses_missing(self):
+        packaging_items = self.prod.checklist_after.packaging_items.all()
+        resp = self.client.post(f'/{self.prod.pk}/etap2/pakowanie/', {
+            'packaging-TOTAL_FORMS': str(packaging_items.count()),
+            'packaging-INITIAL_FORMS': str(packaging_items.count()),
+            **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            'complete': '1',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.prod.refresh_from_db()
+        self.assertIsNone(self.prod.checklist_after.completed_at)
+
+    def test_completed_packaging_is_locked(self):
+        packaging_items = self.prod.checklist_after.packaging_items.all()
+        self.client.post(f'/{self.prod.pk}/etap2/pakowanie/', {
+            'packaging-TOTAL_FORMS': str(packaging_items.count()),
+            'packaging-INITIAL_FORMS': str(packaging_items.count()),
+            **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            **_formset_status_fields('packaging', packaging_items),
+            'complete': '1',
+        })
+        resp = self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
+        self.assertContains(resp, 'zablokowana')
+        resp = self.client.post(f'/{self.prod.pk}/etap2/pakowanie/', {
+            'packaging-TOTAL_FORMS': str(packaging_items.count()),
+            'packaging-INITIAL_FORMS': str(packaging_items.count()),
+            **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+        })
+        self.assertRedirects(resp, f'/{self.prod.pk}/etap2/pakowanie/')
+
+
+class ChecklistPageAccessGateTests(TestCase):
+    """Checklisty produkcyjne (sensoryka/pakowanie) są dostępne tylko dla
+    działów należących do odpowiedniego zespołu (item #3)."""
+
+    def setUp(self):
+        self.outsider = _make_user('gateoutsider', 'IT')
+        self.prod = FirstProduction.objects.create(sap_zlecenie='1', product_name='X', scope='full')
+
+    def test_outsider_cannot_view_sensory_checklist(self):
+        self.client.force_login(self.outsider)
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.assertRedirects(resp, f'/{self.prod.pk}/')
+
+    def test_outsider_cannot_view_packaging_checklist(self):
+        self.client.force_login(self.outsider)
+        resp = self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
+        self.assertRedirects(resp, f'/{self.prod.pk}/')
+
+    def test_sd_can_view_both_checklists(self):
+        sd = _make_user('gatesd', 'SD')
+        self.client.force_login(sd)
+        self.assertEqual(self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/').status_code, 200)
+        self.assertEqual(self.client.get(f'/{self.prod.pk}/etap2/pakowanie/').status_code, 200)
+
+
 class ItDepartmentTests(TestCase):
     """Dział "IT" istnieje tylko do oznaczenia konta w panelu użytkowników -
     nie ma być widoczny w checklistach ani listach wyboru zespołu/
@@ -1647,6 +1810,7 @@ class SensoryLockAfterFirstCompletionTests(TestCase):
             'sensory-TOTAL_FORMS': str(sensory_params.count()),
             'sensory-INITIAL_FORMS': str(sensory_params.count()),
             **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            **_formset_status_fields('sensory', sensory_params),
             'person_sd': str(self.sd.pk),
             'next': '1',
         })
@@ -1684,6 +1848,7 @@ class SensoryLockAfterFirstCompletionTests(TestCase):
             'packaging-TOTAL_FORMS': str(packaging_items.count()),
             'packaging-INITIAL_FORMS': str(packaging_items.count()),
             **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            **_formset_status_fields('packaging', packaging_items),
             'complete': '1',
         })
         self.client.post(f'/{self.prod.pk}/etap3/', {
@@ -1764,6 +1929,7 @@ class BulkEmailToggleTests(TestCase):
             'sensory-TOTAL_FORMS': str(sensory_params.count()),
             'sensory-INITIAL_FORMS': str(sensory_params.count()),
             **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            **_formset_status_fields('sensory', sensory_params),
             'person_sd': str(self.sd.pk),
             'next': '1',
         })
@@ -1843,8 +2009,8 @@ class ZarzadzanieAdminOnlyTests(TestCase):
 
 
 class ReleaseProductionRestrictedToSdCeTests(TestCase):
-    """Etap IV (Akceptacja SD i zwolnienie do sprzedaży) - tylko dla działów
-    SD i CE, żeby nikt poza grupą zwalniającą nie mógł tam wejść/zatwierdzić."""
+    """Etap IV (Akceptacja SD i zwolnienie do sprzedaży) - tylko dla działu
+    SD, żeby nikt poza grupą zwalniającą nie mógł tam wejść/zatwierdzić."""
 
     def setUp(self):
         self.sd = _make_user('sduser', 'SD')
@@ -1852,8 +2018,9 @@ class ReleaseProductionRestrictedToSdCeTests(TestCase):
         self.rd = _make_user('rduser', 'RD')
         self.prod = FirstProduction.objects.create(
             sap_zlecenie='1', product_name='X', scope='full', person_sd=self.sd, acceptor=self.sd)
+        ChecklistBefore.objects.create(production=self.prod, **_FULL_CHECKLIST_BEFORE_STATUS)
         self.client.force_login(self.rd)
-        self.client.post(f'/{self.prod.pk}/etap1/', {'complete': '1'})
+        self.client.post(f'/{self.prod.pk}/etap1/', {'complete': '1', **_FULL_CHECKLIST_BEFORE_STATUS})
         self.client.force_login(self.sd)
         self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
         self.prod.refresh_from_db()
@@ -1863,6 +2030,7 @@ class ReleaseProductionRestrictedToSdCeTests(TestCase):
             'sensory-TOTAL_FORMS': str(sensory_params.count()),
             'sensory-INITIAL_FORMS': str(sensory_params.count()),
             **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            **_formset_status_fields('sensory', sensory_params),
             'person_sd': str(self.sd.pk),
             'next': '1',
         })
@@ -1871,6 +2039,7 @@ class ReleaseProductionRestrictedToSdCeTests(TestCase):
             'packaging-TOTAL_FORMS': str(packaging_items.count()),
             'packaging-INITIAL_FORMS': str(packaging_items.count()),
             **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            **_formset_status_fields('packaging', packaging_items),
             'person_sd': str(self.sd.pk),
             'complete': '1',
         })
@@ -1892,10 +2061,10 @@ class ReleaseProductionRestrictedToSdCeTests(TestCase):
         resp = self.client.get(f'/{self.prod.pk}/etap3/')
         self.assertEqual(resp.status_code, 200)
 
-    def test_ce_can_reach_release_view(self):
+    def test_ce_cannot_reach_release_view(self):
         self.client.force_login(self.ce)
         resp = self.client.get(f'/{self.prod.pk}/etap3/')
-        self.assertEqual(resp.status_code, 200)
+        self.assertRedirects(resp, f'/{self.prod.pk}/')
 
     def test_release_button_hidden_from_rd_on_production_detail(self):
         self.client.force_login(self.rd)
@@ -2063,15 +2232,22 @@ class ChecklistBeforeStaffMultiDeptConfirmationTests(TestCase):
 
 
 class SignatureBoxLiveRevealMarkupTests(TestCase):
-    """Miejsce na podpis renderuje się zawsze dla każdej roli zespołu -
-    ukryte atrybutem hidden dopóki nikt nie jest jeszcze wybrany. Widoczność
-    i etykieta są potem dociągane przez JS na podstawie aktualnie wybranej
+    """Miejsce na podpis renderuje się dla każdej roli zespołu - ukryte
+    atrybutem hidden dopóki nikt nie jest jeszcze wybrany. Widoczność i
+    etykieta są potem dociągane przez JS na podstawie aktualnie wybranej
     osoby w "Zespole", żeby podpis pojawiał się od razu po wyborze, a nie
-    dopiero po zapisaniu formularza (patrz _sig_canvas_js.html)."""
+    dopiero po zapisaniu formularza (patrz _sig_canvas_js.html). Ten pełny
+    widok (wszystkie role naraz) widzi już tylko administrator - zwykły
+    użytkownik widzi wyłącznie własny box podpisu (patrz
+    SignatureBoxOwnOnlyTests), żeby nie widzieć ani nie dawać cudzych
+    podpisów."""
 
     def setUp(self):
         self.sd = _make_user('sduser', 'SD')
-        self.client.force_login(self.sd)
+        self.admin = _make_user('adminuser', 'IT')
+        self.admin.is_staff = True
+        self.admin.save()
+        self.client.force_login(self.admin)
         self.prod = FirstProduction.objects.create(
             sap_zlecenie='1', product_name='X', scope='full')
 
@@ -2091,6 +2267,57 @@ class SignatureBoxLiveRevealMarkupTests(TestCase):
         resp = self.client.get(f'/{self.prod.pk}/etap2/pakowanie/')
         self.assertContains(resp, 'data-person-field="person_pp"')
         self.assertContains(resp, 'class="col-md-4 col-lg-3 team-sig-box" data-role="PP" data-person-field="person_pp" hidden')
+
+
+class SignatureBoxOwnOnlyTests(TestCase):
+    """Zwykły (nie-staff) użytkownik widzi i może podpisać wyłącznie swój
+    własny box podpisu - nie widzi cudzych podpisów ani nie może ich złożyć
+    za kogoś innego (patrz _lock_sig_fields_to_person / _my_sig_field w
+    views.py)."""
+
+    def setUp(self):
+        self.sd = _make_user('ownsig_sd', 'SD')
+        self.rd = _make_user('ownsig_rd', 'RD')
+        self.outsider = _make_user('ownsig_outsider', 'QA')
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full',
+            person_sd=self.sd, person_rd=self.rd)
+
+    def test_assigned_user_sees_only_own_signature_box(self):
+        self.client.force_login(self.sd)
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.assertContains(resp, 'Twój podpis (SD)')
+        self.assertNotContains(resp, 'data-person-field="person_rd"')
+
+    def test_unassigned_user_sees_no_signature_box(self):
+        self.client.force_login(self.outsider)
+        resp = self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        # '.team-sig-box' też pojawia się jako selektor CSS/JS w
+        # _sig_canvas_js.html (zawsze dołączanym) - sprawdzamy brak
+        # faktycznie wyrenderowanego diva z podpisem, a nie samego ciągu.
+        self.assertNotContains(resp, 'class="col-md-4 col-lg-3 team-sig-box"')
+        self.assertContains(resp, 'Nie jesteś przypisany')
+
+    def test_submitting_someone_elses_signature_is_ignored(self):
+        # SD próbuje narzucić podpis R&D - pole sig_rd jest zablokowane
+        # (disabled), więc Django po cichu ignoruje przesłaną wartość.
+        self.client.force_login(self.sd)
+        self.client.get(f'/{self.prod.pk}/etap2/sensoryczne/')
+        self.prod.refresh_from_db()
+        sensory_params = self.prod.checklist_after.sensory_params.all()
+        self.client.post(f'/{self.prod.pk}/etap2/sensoryczne/', {
+            'production_date': '2026-08-10',
+            'sensory-TOTAL_FORMS': str(sensory_params.count()),
+            'sensory-INITIAL_FORMS': str(sensory_params.count()),
+            **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            'sig_rd': 'data:image/png;base64,forged',
+            'sig_sd': 'data:image/png;base64,own',
+            'save': '1',
+        })
+        ca = self.prod.checklist_after
+        ca.refresh_from_db()
+        self.assertEqual(ca.sig_rd, '')
+        self.assertEqual(ca.sig_sd, 'data:image/png;base64,own')
 
 
 class TeamPickerNieDotyczyOptionTests(TestCase):
@@ -2368,8 +2595,12 @@ class Etap2AcceptanceRDOnlyTests(TestCase):
 
     def test_rd_can_complete_etap2(self):
         rd = _make_user('etap2rduser', 'RD')
+        ChecklistBefore.objects.create(production=self.prod, **_FULL_CHECKLIST_BEFORE_STATUS)
         self.client.force_login(rd)
-        resp = self.client.post(f'/{self.prod.pk}/etap1/', {'complete': '1'})
+        # Wiersze należące do R&D (zero_sample/production_card) SĄ
+        # edytowalne w jego formularzu - brak ich w POST zostałby
+        # zinterpretowany jako wyczyszczenie, więc dosyłamy komplet.
+        resp = self.client.post(f'/{self.prod.pk}/etap1/', {'complete': '1', **_FULL_CHECKLIST_BEFORE_STATUS})
         self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
         self.prod.refresh_from_db()
         self.assertEqual(self.prod.status, 'etap1')
@@ -2440,6 +2671,49 @@ class ProductionDateConfirmationTests(TestCase):
         form = FirstProductionForm(instance=self.prod, user=admin)
         self.assertFalse(form.fields['data_produkcji'].disabled)
 
+    def test_sc_can_still_edit_date_after_confirmation(self):
+        # SC sam potwierdza datę, więc sam może ją też skorygować mimo
+        # blokady - patrz FirstProductionForm.__init__ (item #1).
+        from .forms import FirstProductionForm
+        sc = _make_user('confirmscuser5', 'SC')
+        self.client.force_login(sc)
+        self.client.post(f'/{self.prod.pk}/potwierdz-date/')
+        self.prod.refresh_from_db()
+        form = FirstProductionForm(instance=self.prod, user=sc)
+        self.assertFalse(form.fields['data_produkcji'].disabled)
+
+    def test_editing_confirmed_date_sends_notification_email(self):
+        sc = _make_user('confirmscuser6', 'SC')
+        self.client.force_login(sc)
+        self.client.post(f'/{self.prod.pk}/potwierdz-date/')
+        self.prod.refresh_from_db()
+        mail.outbox.clear()
+        resp = self.client.post(f'/{self.prod.pk}/edytuj/', {
+            'sap_zlecenie': self.prod.sap_zlecenie, 'sap_material': self.prod.sap_material,
+            'product_name': self.prod.product_name, 'scope': self.prod.scope,
+            'data_produkcji': '2026-12-05',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.prod.refresh_from_db()
+        self.assertEqual(self.prod.data_produkcji, date(2026, 12, 5))
+        sent = [m for m in mail.outbox if 'Zmieniono datę produkcji' in m.subject]
+        self.assertEqual(len(sent), 1)
+
+    def test_saving_without_changing_date_sends_no_email(self):
+        sc = _make_user('confirmscuser7', 'SC')
+        self.client.force_login(sc)
+        self.client.post(f'/{self.prod.pk}/potwierdz-date/')
+        self.prod.refresh_from_db()
+        mail.outbox.clear()
+        resp = self.client.post(f'/{self.prod.pk}/edytuj/', {
+            'sap_zlecenie': self.prod.sap_zlecenie, 'sap_material': self.prod.sap_material,
+            'product_name': self.prod.product_name, 'scope': self.prod.scope,
+            'data_produkcji': self.prod.data_produkcji.isoformat(),
+        })
+        self.assertEqual(resp.status_code, 302)
+        sent = [m for m in mail.outbox if 'Zmieniono datę produkcji' in m.subject]
+        self.assertEqual(len(sent), 0)
+
 
 class StageAcceptorOnlyTests(TestCase):
     """Zatwierdzenie checklisty sensoryki/pakowania (przejście do kolejnego
@@ -2494,6 +2768,7 @@ class StageAcceptorOnlyTests(TestCase):
             'sensory-TOTAL_FORMS': str(sensory_params.count()),
             'sensory-INITIAL_FORMS': str(sensory_params.count()),
             **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            **_formset_status_fields('sensory', sensory_params),
             'next': '1',
         })
         self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
@@ -2536,6 +2811,7 @@ class StageAcceptorOnlyTests(TestCase):
                     'packaging-TOTAL_FORMS': str(packaging_items.count()),
                     'packaging-INITIAL_FORMS': str(packaging_items.count()),
                     **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+                    **_formset_status_fields('packaging', packaging_items),
                     'complete': '1',
                 })
                 self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
@@ -2553,6 +2829,7 @@ class StageAcceptorOnlyTests(TestCase):
             'packaging-TOTAL_FORMS': str(packaging_items.count()),
             'packaging-INITIAL_FORMS': str(packaging_items.count()),
             **{f'packaging-{i}-id': str(pi.pk) for i, pi in enumerate(packaging_items)},
+            **_formset_status_fields('packaging', packaging_items),
             'complete': '1',
         })
         self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
@@ -2598,8 +2875,12 @@ class Etap2AcceptancePPTests(TestCase):
 
     def test_pp_can_complete_etap2(self):
         pp = _make_user('etap2ppuser', 'PP')
+        ChecklistBefore.objects.create(production=self.prod, **_FULL_CHECKLIST_BEFORE_STATUS)
         self.client.force_login(pp)
-        resp = self.client.post(f'/{self.prod.pk}/etap1/', {'complete': '1'})
+        # Wiersz należący do PP (machine_suitable) JEST edytowalny w jego
+        # formularzu - brak go w POST zostałby zinterpretowany jako
+        # wyczyszczenie, więc dosyłamy komplet.
+        resp = self.client.post(f'/{self.prod.pk}/etap1/', {'complete': '1', **_FULL_CHECKLIST_BEFORE_STATUS})
         self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
         self.prod.refresh_from_db()
         self.assertEqual(self.prod.status, 'etap1')
@@ -2692,6 +2973,7 @@ class SensoryRDAcceptTests(TestCase):
             'sensory-TOTAL_FORMS': str(sensory_params.count()),
             'sensory-INITIAL_FORMS': str(sensory_params.count()),
             **{f'sensory-{i}-id': str(sp.pk) for i, sp in enumerate(sensory_params)},
+            **_formset_status_fields('sensory', sensory_params),
             'next': '1',
         })
         self.assertEqual(resp.status_code, 302, resp.context['form'].errors if resp.status_code == 200 else None)
@@ -2769,3 +3051,46 @@ class ImportSapEditablePreviewTests(TestCase):
         self.assertContains(resp, 'value="124886"')
         self.assertContains(resp, 'value="Produkt X"')
         self.assertContains(resp, 'value="2026-11-02"')
+
+
+class PostReleaseChecklistTests(TestCase):
+    """Etap V - kontrola kartonów u klienta: opcjonalny, niezależny krok po
+    Zwolnieniu, dostępny tylko dla SD, wysyła mail po zapisaniu (item #8)."""
+
+    def setUp(self):
+        self.sd = _make_user('postrelsd', 'SD')
+        self.other = _make_user('postrelother', 'QA')
+        self.prod = FirstProduction.objects.create(
+            sap_zlecenie='1', product_name='X', scope='full', status='zwolniona')
+
+    def test_blocked_before_release(self):
+        prod = FirstProduction.objects.create(sap_zlecenie='2', product_name='Y', scope='full')
+        self.client.force_login(self.sd)
+        resp = self.client.get(f'/{prod.pk}/etap4/')
+        self.assertRedirects(resp, f'/{prod.pk}/')
+
+    def test_non_sd_cannot_access(self):
+        self.client.force_login(self.other)
+        resp = self.client.get(f'/{self.prod.pk}/etap4/')
+        self.assertRedirects(resp, f'/{self.prod.pk}/')
+
+    def test_sd_can_submit_and_email_is_sent(self):
+        self.client.force_login(self.sd)
+        resp = self.client.post(f'/{self.prod.pk}/etap4/', {
+            'delivered_status': 'tak', 'checked_status': 'tak',
+            'condition_status': 'tak', 'comment': 'Wszystko ok',
+        })
+        self.assertEqual(resp.status_code, 302)
+        pr = self.prod.post_release_checklist
+        self.assertIsNotNone(pr.completed_at)
+        self.assertEqual(pr.completed_by, self.sd)
+        sent = [m for m in mail.outbox if 'Kontrola kartonów' in m.subject]
+        self.assertEqual(len(sent), 1)
+        self.assertIn('Wszystko ok', sent[0].body)
+
+    def test_independent_of_other_stages(self):
+        # Opcjonalny i niezależny - dostępny samodzielnie, gdy tylko
+        # produkcja jest zwolniona, niezależnie od reszty checklist.
+        self.client.force_login(self.sd)
+        resp = self.client.get(f'/{self.prod.pk}/etap4/')
+        self.assertEqual(resp.status_code, 200)
