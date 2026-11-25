@@ -239,15 +239,6 @@ class ChecklistBefore(models.Model):
     additional_samples_status = models.CharField(max_length=3, choices=ITEM_STATUS, blank=True)
     additional_samples_count  = models.CharField('Ilość próbek', max_length=20, blank=True)
     additional_samples_uwagi  = models.TextField('Uwagi (dodatkowe próbki/UMK)', blank=True)
-    test_packaging_1_name   = models.CharField(max_length=200, blank=True)
-    test_packaging_1_status = models.CharField(max_length=3, choices=ITEM_STATUS, blank=True)
-    test_packaging_1_nadzor = models.CharField(max_length=100, blank=True)
-    test_packaging_2_name   = models.CharField(max_length=200, blank=True)
-    test_packaging_2_status = models.CharField(max_length=3, choices=ITEM_STATUS, blank=True)
-    test_packaging_2_nadzor = models.CharField(max_length=100, blank=True)
-    test_packaging_3_name   = models.CharField(max_length=200, blank=True)
-    test_packaging_3_status = models.CharField(max_length=3, choices=ITEM_STATUS, blank=True)
-    test_packaging_3_nadzor = models.CharField(max_length=100, blank=True)
     # Potwierdzenia - imię i nazwisko osoby z danego działu, która ostatnio
     # zapisała checklistę (patrz _stamp_checklist_before_confirmation w
     # views.py) - nie jest to już ręcznie wpisywane pole tekstowe.
@@ -416,6 +407,29 @@ class PackagingItem(models.Model):
 
     class Meta:
         ordering = ['id']
+
+
+# ──────────────────────────────────────────────────────────
+# Etap V – kontrola kartonów u klienta (opcjonalny, po Zwolnieniu)
+# ──────────────────────────────────────────────────────────
+
+class PostReleaseChecklist(models.Model):
+    """Niezależny, opcjonalny krok po Etapie IV (Zwolnienie do sprzedaży) -
+    potwierdzenie przez Sprzedaż (SD), że kartony dostarczone do klienta są
+    w porządku. Nie blokuje ani nie jest blokowany przez żaden inny etap."""
+    production = models.OneToOneField(
+        FirstProduction, on_delete=models.CASCADE, related_name='post_release_checklist'
+    )
+    delivered_status = models.CharField('Odstawione', max_length=3, choices=ITEM_STATUS, blank=True)
+    checked_status   = models.CharField('Sprawdzone', max_length=3, choices=ITEM_STATUS, blank=True)
+    condition_status = models.CharField('Stan ok', max_length=3, choices=ITEM_STATUS, blank=True)
+    comment          = models.TextField('Komentarz', blank=True)
+    completed_at     = models.DateTimeField(null=True, blank=True)
+    completed_by     = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
 
 class EmailLog(models.Model):

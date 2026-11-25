@@ -7,13 +7,25 @@
     <h4 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>Etap II – Checklista przed produkcją</h4>
     <small class="text-muted">{{ production.product_name }} &nbsp;|&nbsp; CD-00002055 str. 1</small>
   </div>
-  <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-arrow-left me-1"></i>Powrót
-  </a>
+  <div class="d-flex gap-2">
+    <a href="{% url 'checklist_before' production.pk %}" class="btn btn-outline-secondary btn-sm" title="Odśwież">
+      <i class="bi bi-arrow-clockwise me-1"></i>Odśwież
+    </a>
+    <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Powrót
+    </a>
+  </div>
 </div>
 
 <form method="post">
   {% csrf_token %}
+
+  {% if cb_locked %}
+  <div class="alert alert-secondary py-2 small mb-3">
+    <i class="bi bi-lock me-1"></i>Checklista Etapu II została już zatwierdzona - jest zablokowana
+    do edycji.
+  </div>
+  {% endif %}
 
   <!-- Nagłówek -->
   <div class="card mb-3">
@@ -113,48 +125,9 @@
     </div>
   </div>
 
-  <!-- Test pakowania -->
-  <div class="card mb-3">
-    <div class="card-header"><i class="bi bi-box-seam me-2"></i>Test pakowania</div>
-    <div class="card-body p-0">
-      <div class="table-responsive">
-        <table class="table checklist-table mb-0">
-          <thead class="table-light">
-            <tr>
-              <th style="width:35%">Nazwa pozycji</th>
-              <th>Tak / Nie / N/D</th>
-              <th>Nadzór</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for i in "123" %}
-            {% with i=forloop.counter %}
-            <tr>
-              <td>
-                {% if i == 1 %}{{ form.test_packaging_1_name }}
-                {% elif i == 2 %}{{ form.test_packaging_2_name }}
-                {% else %}{{ form.test_packaging_3_name }}{% endif %}
-              </td>
-              <td>
-                {% if i == 1 %}{% include "productions/_status_radio.html" with field=form.test_packaging_1_status %}
-                {% elif i == 2 %}{% include "productions/_status_radio.html" with field=form.test_packaging_2_status %}
-                {% else %}{% include "productions/_status_radio.html" with field=form.test_packaging_3_status %}{% endif %}
-              </td>
-              <td>
-                {% if i == 1 %}{{ form.test_packaging_1_nadzor }}
-                {% elif i == 2 %}{{ form.test_packaging_2_nadzor }}
-                {% else %}{{ form.test_packaging_3_nadzor }}{% endif %}
-              </td>
-            </tr>
-            {% endwith %}
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
 
   <div class="d-flex gap-2">
+    {% if not cb_locked %}
     <button type="submit" name="save" class="btn btn-outline-primary">
       <i class="bi bi-floppy me-1"></i>Zapisz roboczo
     </button>
@@ -166,6 +139,7 @@
     <span class="btn btn-success disabled" title="Zatwierdzenie Etapu II jest dostępne tylko dla działów R&amp;D i PP">
       <i class="bi bi-lock me-1"></i>Zatwierdź Etap II
     </span>
+    {% endif %}
     {% endif %}
     <a href="{% url 'production_detail' production.pk %}" class="btn btn-outline-secondary">Anuluj</a>
     {% if form.instance.pk %}

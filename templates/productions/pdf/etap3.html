@@ -185,38 +185,6 @@
   </tr>
 </table>
 
-<table class="checklist">
-  <tr>
-    <th>Test pakowania</th>
-    <th style="width:5%">Tak</th><th style="width:5%">Nie</th><th style="width:6%">Nie dotyczy</th>
-    <th>Uwagi</th><th style="width:9%">Nadzór</th>
-  </tr>
-  <tr style="height:16px;">
-    <td class="item">{% if cb %}{{ cb.test_packaging_1_name|default:"" }}{% endif %}</td>
-    <td class="check">{% if cb and cb.test_packaging_1_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
-    <td class="check">{% if cb and cb.test_packaging_1_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
-    <td class="check">{% if cb and cb.test_packaging_1_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
-    <td class="uwagi"></td>
-    <td class="nadzor">{% if cb %}{{ cb.test_packaging_1_nadzor|default:"" }}{% endif %}</td>
-  </tr>
-  <tr style="height:16px;">
-    <td class="item">{% if cb %}{{ cb.test_packaging_2_name|default:"" }}{% endif %}</td>
-    <td class="check">{% if cb and cb.test_packaging_2_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
-    <td class="check">{% if cb and cb.test_packaging_2_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
-    <td class="check">{% if cb and cb.test_packaging_2_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
-    <td class="uwagi"></td>
-    <td class="nadzor">{% if cb %}{{ cb.test_packaging_2_nadzor|default:"" }}{% endif %}</td>
-  </tr>
-  <tr style="height:16px;">
-    <td class="item">{% if cb %}{{ cb.test_packaging_3_name|default:"" }}{% endif %}</td>
-    <td class="check">{% if cb and cb.test_packaging_3_status == 'tak' %}<span class="chk">✓</span>{% endif %}</td>
-    <td class="check">{% if cb and cb.test_packaging_3_status == 'nie' %}<span class="unchk">✗</span>{% endif %}</td>
-    <td class="check">{% if cb and cb.test_packaging_3_status == 'nd' %}<span class="nd-mark">–</span>{% endif %}</td>
-    <td class="uwagi"></td>
-    <td class="nadzor">{% if cb %}{{ cb.test_packaging_3_nadzor|default:"" }}{% endif %}</td>
-  </tr>
-</table>
-
 <table class="info-grid">
   <tr>
     <td colspan="8" style="background:var(--light-bg);font-weight:bold;">Potwierdzenie gotowości do PWPR przez działy:</td>

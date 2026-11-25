@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.auth.models import User
 from .models import (
     FirstProduction, ChecklistBefore, ChecklistAfter,
-    SensoryParam, PackagingItem, UserProfile, NotificationRecipient, DEPT_CHOICES,
+    SensoryParam, PackagingItem, PostReleaseChecklist, UserProfile, NotificationRecipient, DEPT_CHOICES,
 )
 
 ITEM_STATUS_CHOICES = [('', '–'), ('tak', 'Tak'), ('nie', 'Nie'), ('nd', 'N/D')]
@@ -192,7 +192,8 @@ def _person_field(dept_code, label, empty_label='Nie dotyczy'):
 # blokowania (disabled=True) co CHECKLIST_BEFORE_ROW_FIELDS w views.py.
 PRODUCTION_FIELD_DEPT_LOCKS = [
     (['scope'], ['RD', 'SC']),
-    (['data_produkcji', 'zmiany', 'layout', 'typ_produkcji', 'fert_number'], ['SD']),
+    (['data_produkcji'], ['SD', 'SC']),
+    (['zmiany', 'layout', 'typ_produkcji', 'fert_number'], ['SD']),
     (['rd_number', 'recipe', 'crm_project_nr'], ['RD']),
 ]
 
@@ -271,10 +272,14 @@ class FirstProductionForm(forms.ModelForm):
                 self.fields['acceptor'].disabled = True
 
         # Po potwierdzeniu daty produkcji przez dział Planowania (SC, patrz
-        # confirm_production_date w views.py) nikt poza adminem nie może już
-        # jej zmienić - niezależnie od działu z PRODUCTION_FIELD_DEPT_LOCKS.
+        # confirm_production_date w views.py) datę może zmienić mimo blokady
+        # nadal tylko SC (sami ją potwierdzili, więc sami mogą skorygować) -
+        # plus admin. Każda taka zmiana wysyła mail (patrz production_edit/
+        # production_detail w views.py).
         if self.instance.pk and self.instance.data_confirmed_at:
-            if not (self.user is not None and self.user.is_staff):
+            dept = getattr(getattr(self.user, 'profile', None), 'department', '') or '' if self.user else ''
+            bypass = self.user is not None and (self.user.is_staff or dept == 'SC')
+            if not bypass:
                 self.fields['data_produkcji'].disabled = True
 
     def _user_label(self, user):
@@ -353,9 +358,6 @@ class ChecklistBeforeForm(forms.ModelForm):
             'date_format_status':      forms.RadioSelect(attrs={'class': 'status-radio'}),
             'bom_set_status':          forms.RadioSelect(attrs={'class': 'status-radio'}),
             'additional_samples_status': forms.RadioSelect(attrs={'class': 'status-radio'}),
-            'test_packaging_1_status': forms.RadioSelect(attrs={'class': 'status-radio'}),
-            'test_packaging_2_status': forms.RadioSelect(attrs={'class': 'status-radio'}),
-            'test_packaging_3_status': forms.RadioSelect(attrs={'class': 'status-radio'}),
             'order_updated_uwagi':     forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
             'pwpr_uwagi':              forms.TextInput(attrs={'class': 'form-control form-control-sm'}),
             'analysis_form_version':   forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Wersja dok.'}),
@@ -370,12 +372,6 @@ class ChecklistBeforeForm(forms.ModelForm):
             'planned_yield_takty':     forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'takty'}),
             'additional_samples_count': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Ilość'}),
             'additional_samples_uwagi': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Uwagi'}),
-            'test_packaging_1_name':   forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nazwa pozycji'}),
-            'test_packaging_1_nadzor': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nadzór'}),
-            'test_packaging_2_name':   forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nazwa pozycji'}),
-            'test_packaging_2_nadzor': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nadzór'}),
-            'test_packaging_3_name':   forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nazwa pozycji'}),
-            'test_packaging_3_nadzor': forms.TextInput(attrs={'class': 'form-control form-control-sm', 'placeholder': 'Nadzór'}),
         }
 
 
@@ -579,6 +575,19 @@ class ChecklistAfterAcceptanceForm(forms.ModelForm):
 
 # zachowane dla kompatybilności wstecznej (używane w widoku checklist_after)
 ChecklistAfterHeaderForm = ChecklistAfterSensoryForm
+
+
+# Etap V – kontrola kartonów u klienta (opcjonalny, po Zwolnieniu)
+class PostReleaseChecklistForm(forms.ModelForm):
+    class Meta:
+        model = PostReleaseChecklist
+        fields = ['delivered_status', 'checked_status', 'condition_status', 'comment']
+        widgets = {
+            'delivered_status': forms.RadioSelect(attrs={'class': 'status-radio'}),
+            'checked_status':   forms.RadioSelect(attrs={'class': 'status-radio'}),
+            'condition_status': forms.RadioSelect(attrs={'class': 'status-radio'}),
+            'comment': forms.Textarea(attrs={'class': 'form-control form-control-sm', 'rows': 2}),
+        }
 
 
 class SensoryParamForm(forms.ModelForm):
